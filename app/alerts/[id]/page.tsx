@@ -1,12 +1,15 @@
 "use client";
 
+import { AlertDetailSkeleton } from "@/components/alert-detail-skeleton";
+import { QueryErrorBanner } from "@/components/query-error";
+import { TableSwipeHint } from "@/components/table-swipe-hint";
+import { formatDateTime } from "@/lib/format";
+import { TABLE_PY_INNER } from "@/lib/table-padding";
+import { supabase } from "@/lib/supabase";
+import type { AlertRow } from "@/lib/types";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
-
-const otherAlerts = [
-  { id: "a-4920", type: "AML", status: "Monitoring", createdAt: "2026-03-18 14:22" },
-];
+import { useEffect, useState } from "react";
 
 type Decision = "false_positive" | "true_positive" | "info_requested" | "escalated" | null;
 
@@ -19,7 +22,6 @@ function getStatus(decision: Decision): string {
 export default function AlertDetailsPage() {
   const params = useParams<{ id: string }>();
   const alertId = params?.id ?? "a-unknown";
-  const userId = "u-1001";
   const [noteText, setNoteText] = useState("");
   const [copied, setCopied] = useState(false);
   const [decision, setDecision] = useState<Decision>(null);
@@ -29,6 +31,57 @@ export default function AlertDetailsPage() {
     { text: "Alert triaged for fraud review.", type: "system" },
     { text: "Requesting SOF docs from user.", type: "analyst" },
   ]);
+
+  const [alert, setAlert] = useState<AlertRow | null>(null);
+  const [otherAlerts, setOtherAlerts] = useState<AlertRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const { data: row, error: qError } = await supabase
+        .from("alerts")
+        .select("*")
+        .eq("id", alertId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (qError) {
+        setError(qError.message);
+        setAlert(null);
+        setOtherAlerts([]);
+        setLoading(false);
+        return;
+      }
+      if (!row) {
+        setAlert(null);
+        setOtherAlerts([]);
+        setLoading(false);
+        return;
+      }
+      const a = row as AlertRow;
+      setAlert(a);
+      const uid = a.user_id;
+      if (uid) {
+        const { data: others } = await supabase
+          .from("alerts")
+          .select("*")
+          .eq("user_id", uid)
+          .neq("id", alertId)
+          .order("created_at", { ascending: false });
+        if (!cancelled) setOtherAlerts((others as AlertRow[]) ?? []);
+      } else {
+        setOtherAlerts([]);
+      }
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [alertId, reloadTick]);
 
   const addNote = () => {
     if (!noteText.trim()) return;
@@ -42,10 +95,44 @@ export default function AlertDetailsPage() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const status = getStatus(decision);
+  const userId = alert?.user_id ?? "—";
+  const displayStatus = decision != null ? getStatus(decision) : (alert?.status ?? "Open");
+
+  if (loading) {
+    return <AlertDetailSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <section className="page-panel space-y-4 p-4 sm:p-6">
+        <QueryErrorBanner
+          message={error}
+          onRetry={() => setReloadTick((n) => n + 1)}
+          hint={
+            <p className="text-xs text-rose-800/90">
+              Check <code className="rounded bg-rose-100 px-1 font-mono">.env.local</code> and Supabase project access.
+            </p>
+          }
+        />
+      </section>
+    );
+  }
+
+  if (!alert) {
+    return (
+      <section className="page-panel space-y-4 p-4 sm:p-6">
+        <p className="text-slate-600">
+          Alert not found. Run <code className="font-mono text-xs">supabase/schema.sql</code> or check the ID.
+        </p>
+        <Link href="/alerts" className="text-sm text-[#264B5A] hover:underline">
+          Back to Alerts
+        </Link>
+      </section>
+    );
+  }
 
   return (
-    <section className="space-y-4 rounded-2xl border border-slate-300 bg-slate-50 p-6 shadow-[0_10px_22px_rgba(15,23,42,0.12)]">
+    <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
       <nav className="text-sm text-slate-500">
         <Link href="/" className="hover:text-[#264B5A]">
           Home
@@ -57,8 +144,8 @@ export default function AlertDetailsPage() {
         / <span className="text-slate-700">Alert Details</span>
       </nav>
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Alert Details</h1>
+      <div className="flex items-start justify-between gap-3">
+        <h1 className="heading-page">Alert Details</h1>
         <button
           type="button"
           onClick={copyAlertId}
@@ -72,46 +159,48 @@ export default function AlertDetailsPage() {
         </button>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-12">
-        <div className="space-y-4 xl:col-span-8">
+      <div className="grid gap-4 lg:grid-cols-12">
+        <div className="min-w-0 space-y-4 lg:col-span-8">
           <div className="rounded-xl border border-slate-300 bg-slate-100 p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Alert Information
-            </h2>
+            <h2 className="heading-section mb-3">Alert Information</h2>
             <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
               <p>
                 <span className="font-medium">User ID:</span>{" "}
-                <Link
-                  href={`/users/${userId}`}
-                  className="font-mono text-[#264B5A] hover:underline"
-                >
-                  {userId}
-                </Link>
+                {alert.user_id ? (
+                  <Link
+                    href={`/users/${alert.user_id}`}
+                    className="font-mono text-[#264B5A] hover:underline"
+                  >
+                    {alert.user_id}
+                  </Link>
+                ) : (
+                  <span className="font-mono">{userId}</span>
+                )}
               </p>
               <p>
                 <span className="font-medium">Type:</span>{" "}
-                <span className="font-semibold text-sky-600">Fraud</span>
+                <span className="font-semibold text-sky-600">{alert.type ?? "—"}</span>
               </p>
               <p>
                 <span className="font-medium">Severity:</span>{" "}
-                <span className="font-semibold text-rose-600">High</span>
+                <span className="font-semibold text-rose-600">{alert.severity ?? "—"}</span>
               </p>
               <p>
                 <span className="font-medium">Status:</span>{" "}
                 <span
                   className={`font-semibold ${
-                    status === "Open"
+                    displayStatus === "Open"
                       ? "text-amber-600"
-                      : status === "Resolved"
+                      : displayStatus === "Resolved"
                         ? "text-emerald-600"
                         : "text-sky-600"
                   }`}
                 >
-                  {status}
+                  {displayStatus}
                 </span>
               </p>
               <p>
-                <span className="font-medium">Created At:</span> 2026-03-20 11:42
+                <span className="font-medium">Created At:</span> {formatDateTime(alert.created_at)}
               </p>
               <p>
                 <span className="font-medium">Decision:</span>{" "}
@@ -131,35 +220,36 @@ export default function AlertDetailsPage() {
           </div>
 
           <div className="rounded-xl border border-slate-300 bg-slate-100 p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Description
-            </h2>
+            <h2 className="heading-section mb-3">Description</h2>
             <p className="text-sm leading-6 text-slate-700">
-              Unusual transaction velocity detected over a short time window
-              after recent credential reset. Pattern exceeds account baseline and
-              triggers fraud review workflow.
+              {alert.description ??
+                "No description stored for this alert."}
             </p>
           </div>
 
           {otherAlerts.length > 0 && (
             <div className="rounded-xl border border-slate-300 bg-slate-100 p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-                Other Alerts
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+              <h2 className="heading-section mb-3">Other Alerts</h2>
+              <TableSwipeHint />
+              <div className="scroll-x-touch">
+                <table className="min-w-[520px] border-collapse text-sm">
                   <thead>
-                    <tr className="border-b border-slate-300 text-left text-xs uppercase tracking-wide text-slate-600">
-                      <th className="py-2 pr-4">Alert</th>
-                      <th className="py-2 pr-4">Type</th>
-                      <th className="py-2 pr-4">Status</th>
-                      <th className="py-2">Created</th>
+                    <tr className="sticky top-0 z-10 border-b border-slate-300 bg-slate-200/95 text-left text-xs uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                      <th className={`pr-4 ${TABLE_PY_INNER}`}>Alert</th>
+                      <th className={`pr-4 ${TABLE_PY_INNER}`}>Type</th>
+                      <th className={`pr-4 ${TABLE_PY_INNER}`}>Status</th>
+                      <th className={`text-right tabular-nums ${TABLE_PY_INNER}`}>Created</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {otherAlerts.map((a) => (
-                      <tr key={a.id} className="border-b border-slate-200 text-slate-700 last:border-0">
-                        <td className="py-2 pr-4">
+                    {otherAlerts.map((a, idx) => (
+                      <tr
+                        key={a.id}
+                        className={`border-b border-slate-200 text-slate-700 transition-colors duration-150 last:border-0 hover:bg-slate-200/50 ${
+                          idx % 2 === 1 ? "bg-slate-50/70" : ""
+                        }`}
+                      >
+                        <td className={`pr-4 ${TABLE_PY_INNER}`}>
                           <Link
                             href={`/alerts/${a.id}`}
                             className="font-mono text-xs text-[#264B5A] hover:underline"
@@ -167,9 +257,11 @@ export default function AlertDetailsPage() {
                             {a.id}
                           </Link>
                         </td>
-                        <td className="py-2 pr-4">{a.type}</td>
-                        <td className="py-2 pr-4">{a.status}</td>
-                        <td className="py-2">{a.createdAt}</td>
+                        <td className={`pr-4 ${TABLE_PY_INNER}`}>{a.type ?? "—"}</td>
+                        <td className={`pr-4 ${TABLE_PY_INNER}`}>{a.status ?? "—"}</td>
+                        <td className={`text-right tabular-nums ${TABLE_PY_INNER}`}>
+                          {formatDateTime(a.created_at)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -179,19 +271,18 @@ export default function AlertDetailsPage() {
           )}
 
           <div className="rounded-xl border border-slate-300 bg-slate-100 p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Analyst Notes
-            </h2>
-            <div className="mb-3 flex gap-2">
+            <h2 className="heading-section mb-3">Analyst Notes</h2>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row">
               <input
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
                 placeholder="Leave a note..."
-                className="flex-1 rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#264B5A]"
+                className="min-h-11 w-full min-w-0 flex-1 rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#264B5A] sm:min-h-0"
               />
               <button
+                type="button"
                 onClick={addNote}
-                className="rounded-md bg-[#264B5A] px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-[#315E70]"
+                className="min-h-11 shrink-0 rounded-md bg-[#264B5A] px-4 py-2 text-sm font-medium text-slate-100 hover:bg-[#315E70] sm:min-h-0 sm:px-3 sm:py-1.5"
               >
                 Add
               </button>
@@ -215,13 +306,12 @@ export default function AlertDetailsPage() {
           </div>
         </div>
 
-        <aside className="xl:col-span-4">
-          <div className="sticky top-6 rounded-xl border border-slate-300 bg-slate-100 p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
-              Decision
-            </h2>
-            <div className="flex flex-wrap gap-2">
+        <aside className="lg:col-span-4">
+          <div className="rounded-xl border border-slate-300 bg-slate-100 p-4 lg:sticky lg:top-4">
+            <h2 className="heading-section mb-3">Decision</h2>
+            <div className="flex flex-wrap gap-2 [&_button]:min-h-11 [&_button]:px-3 sm:[&_button]:min-h-0 sm:[&_button]:px-2.5 sm:[&_button]:py-1.5">
               <button
+                type="button"
                 onClick={() => setDecision("false_positive")}
                 className={`rounded-md px-2.5 py-1.5 text-sm font-medium ${
                   decision === "false_positive"
@@ -232,6 +322,7 @@ export default function AlertDetailsPage() {
                 False Positive
               </button>
               <button
+                type="button"
                 onClick={() => setDecision("true_positive")}
                 className={`rounded-md px-2.5 py-1.5 text-sm font-medium ${
                   decision === "true_positive"
@@ -242,6 +333,7 @@ export default function AlertDetailsPage() {
                 True Positive
               </button>
               <button
+                type="button"
                 onClick={() => setDecision("info_requested")}
                 className={`rounded-md border border-slate-300 px-2.5 py-1.5 text-sm ${
                   decision === "info_requested" ? "bg-slate-200" : "bg-slate-50 text-slate-700 hover:bg-slate-200"
@@ -250,6 +342,7 @@ export default function AlertDetailsPage() {
                 Info requested
               </button>
               <button
+                type="button"
                 onClick={() => setDecision("escalated")}
                 className={`rounded-md border border-amber-300 px-2.5 py-1.5 text-sm ${
                   decision === "escalated" ? "bg-amber-100" : "bg-amber-50 text-amber-700 hover:bg-amber-100"

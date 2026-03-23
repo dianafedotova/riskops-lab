@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function GuidePage() {
   return (
-    <section className="space-y-5 rounded-2xl border border-slate-300 bg-slate-50 p-6 shadow-[0_10px_22px_rgba(15,23,42,0.12)]">
+    <section className="space-y-5 rounded-2xl border border-slate-300 bg-slate-50 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">

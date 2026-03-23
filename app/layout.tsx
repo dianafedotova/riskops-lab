@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { AppNav } from "@/components/app-nav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,29 +19,32 @@ export const metadata: Metadata = {
   description: "Fraud and AML risk review simulator",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#0f172a",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const navLinks = [
-    { href: "/", label: "Home" },
-    { href: "/users", label: "Users" },
-    { href: "/alerts", label: "Alerts" },
-    { href: "/guide", label: "Guide" },
-    { href: "/about", label: "About" },
-  ];
-
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-[#0F172A] text-slate-200">
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-          <header className="mb-8 rounded-xl border border-[#345868]/80 bg-[#264B5A]/55 px-5 py-4 shadow-[0_2px_6px_rgba(2,6,23,0.16)] backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <Link href="/" className="flex items-center gap-3">
+      <body className="min-h-full min-w-0 bg-app-shell text-slate-200">
+        <div className="mx-auto flex min-h-screen min-w-0 max-w-7xl flex-col px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:py-6 lg:px-8">
+          <header className="surface-lift mb-6 rounded-xl border border-[#345868]/80 bg-[#264B5A]/55 px-4 py-3 shadow-[0_2px_6px_rgba(2,6,23,0.16)] backdrop-blur sm:mb-8 sm:px-5 sm:py-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <Link
+                href="/"
+                className="flex items-center gap-3 rounded-lg transition-opacity duration-150 hover:opacity-95"
+              >
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#264B5A] text-sm font-bold text-slate-100">
                   RL
                 </span>
@@ -48,28 +52,26 @@ export default function RootLayout({
                   RiskOps Lab
                 </span>
               </Link>
-              <nav className="flex flex-wrap items-center gap-1">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-[#315E70]/45 hover:text-white"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </nav>
+              <AppNav />
             </div>
           </header>
 
-          <main className="flex-1 pb-8">{children}</main>
-          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-700 pt-4 text-xs text-slate-400">
+          <main className="min-w-0 flex-1 pb-6 sm:pb-8">
+            <div className="main-content-shell p-3 sm:p-5 md:p-6">{children}</div>
+          </main>
+          <footer className="flex flex-col gap-3 border-t border-slate-700 pt-4 text-xs text-slate-400 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <p>RiskOps Lab simulator - training UI for fraud and AML reviews.</p>
             <div className="flex items-center gap-4">
-              <Link href="/terms" className="hover:text-[#7EA6B7] hover:underline">
+              <Link
+                href="/terms"
+                className="rounded transition-colors duration-150 hover:text-[#7EA6B7] hover:underline"
+              >
                 Terms &amp; Conditions
               </Link>
-              <Link href="/privacy" className="hover:text-[#7EA6B7] hover:underline">
+              <Link
+                href="/privacy"
+                className="rounded transition-colors duration-150 hover:text-[#7EA6B7] hover:underline"
+              >
                 Privacy
               </Link>
             </div>

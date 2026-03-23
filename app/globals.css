@@ -1,8 +1,36 @@
-@import "tailwindcss";
+/* Relative path so Tailwind resolves from this project, not the parent workspace folder */
+@import "../node_modules/tailwindcss/index.css";
 
 :root {
   --background: #0f172a;
   --foreground: #e2e8f0;
+
+  /* App shell & content surface */
+  --app-shell-bg: #0f172a;
+  --surface-main: #e2e8f0;
+  --surface-panel: #f8fafc;
+  --surface-muted: #f1f5f9;
+  --border-app: rgb(203 213 225 / 0.85);
+  --border-subtle: rgb(226 232 240 / 0.95);
+
+  /* Brand */
+  --brand-600: #264b5a;
+  --brand-500: #315e70;
+  --brand-ring: rgb(126 166 183 / 0.75);
+
+  /* Elevation */
+  --shadow-soft: 0 2px 8px rgb(0 0 0 / 0.06);
+  --shadow-panel: 0 10px 22px rgb(15 23 42 / 0.12);
+
+  /* Motion */
+  --duration-ui: 150ms;
+  --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Typography scale (headings) */
+  --text-page: 1.5rem;
+  --text-page-leading: 1.25;
+  --text-section: 0.75rem;
+  --text-label: 0.6875rem;
 }
 
 @theme inline {
@@ -10,6 +38,15 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-app-shell: var(--app-shell-bg);
+  --color-surface-main: var(--surface-main);
+  --color-surface-panel: var(--surface-panel);
+  --color-brand-600: var(--brand-600);
+  --color-brand-500: var(--brand-500);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -17,4 +54,79 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Inter", "Segoe UI", Arial, sans-serif;
   line-height: 1.5;
+}
+
+/* Tables / wide blocks: momentum scroll on iOS */
+.scroll-x-touch {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Focus: keyboard-visible ring on interactive controls */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px var(--app-shell-bg),
+    0 0 0 4px var(--brand-ring);
+}
+
+/* Unified heading hierarchy */
+.heading-page {
+  font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.5rem);
+  line-height: var(--text-page-leading);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: rgb(15 23 42);
+}
+
+.heading-section {
+  font-size: var(--text-section);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--brand-600);
+  border-bottom: 1px solid rgb(226 232 240 / 0.95);
+  padding-bottom: 0.5rem;
+}
+
+.field-label {
+  font-size: var(--text-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgb(100 116 139);
+}
+
+/* Micro-motion for cards / panels */
+.surface-lift {
+  transition:
+    box-shadow var(--duration-ui) var(--ease-ui),
+    border-color var(--duration-ui) var(--ease-ui),
+    transform var(--duration-ui) var(--ease-ui);
+}
+
+.surface-lift:hover {
+  box-shadow: var(--shadow-panel);
+}
+
+/* Main content shell: light substrate inside dark app frame */
+.main-content-shell {
+  border-radius: 1rem;
+  border: 1px solid rgb(51 65 85 / 0.35);
+  background: var(--surface-main);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  min-height: min(70vh, calc(100vh - 10rem));
+  min-width: 0;
+}
+
+.page-panel {
+  border-radius: 1rem;
+  border: 1px solid var(--border-app);
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-panel);
 }
