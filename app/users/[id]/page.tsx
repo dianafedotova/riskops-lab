@@ -56,6 +56,51 @@ function accountStatusLabel(status: AccountStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function toTitleCase(v: string | null | undefined): string {
+  const raw = (v ?? "").trim();
+  if (!raw) return "—";
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+function getAlertType(a: AlertRow & { rule_code?: string | null }): string {
+  const t = (a.alert_type ?? a.type ?? "").trim();
+  if (t) return t;
+  const code = (a.rule_code ?? "").trim();
+  if (code) return code.split("_")[0] ?? "";
+  return "";
+}
+
+function getAlertDescription(a: AlertRow & { rule_name?: string | null }): string {
+  const rn = (a.rule_name ?? "").trim();
+  if (rn) return rn;
+  const d = (a.description ?? "").trim();
+  return d || "—";
+}
+
+const normalizeStr = (v: unknown) => (v == null ? "" : String(v)).trim().toLowerCase();
+const linkedAlertTypeBadgeClass = (type: string | null | undefined) => {
+  const s = normalizeStr(type);
+  if (!s) return "bg-slate-200 text-slate-700";
+  if (s === "aml") return "bg-indigo-100 text-indigo-700";
+  return "bg-cyan-100 text-cyan-700";
+};
+const linkedAlertSeverityBadgeClass = (severity: string | null) => {
+  const s = normalizeStr(severity);
+  if (s === "critical") return "bg-rose-200 text-rose-800";
+  if (s === "high") return "bg-rose-100 text-rose-700";
+  if (s === "medium") return "bg-amber-100 text-amber-700";
+  if (s === "low") return "bg-emerald-100 text-emerald-700";
+  return "bg-slate-200 text-slate-700";
+};
+const linkedAlertStatusBadgeClass = (status: string | null) => {
+  const s = normalizeStr(status);
+  if (s === "open") return "bg-sky-100 text-sky-700";
+  if (s === "monitoring") return "bg-amber-100 text-amber-700";
+  if (s === "escalated") return "bg-violet-100 text-violet-700";
+  if (s === "closed") return "bg-emerald-100 text-emerald-700";
+  return "bg-slate-200 text-slate-700";
+};
+
 function transactionStatusBadge(status: string | null): { label: string; className: string } {
   const raw = (status ?? "").trim();
   if (!raw) {
@@ -566,7 +611,7 @@ export default function UserProfilePage() {
         / <span className="text-slate-700">{displayName}</span>
       </nav>
 
-      <div className="flex min-w-0 flex-row items-start gap-4 overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-4 py-3 shadow-sm ring-1 ring-slate-200/50 sm:items-center sm:overflow-visible sm:p-5">
+      <div className="flex min-w-0 flex-row items-start gap-4 overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-b from-slate-50/50 to-slate-100 px-4 py-3 shadow-sm ring-1 ring-slate-200/50 sm:items-center sm:overflow-visible sm:p-5">
         <div className="shrink-0 sm:self-center">
           <div className="relative h-12 w-12 overflow-hidden rounded-full border border-slate-300 bg-slate-200 shadow-sm sm:h-[7.5rem] sm:w-[7.5rem]">
           {selfieUrl && !selfieLoadFailed ? (
@@ -771,29 +816,29 @@ export default function UserProfilePage() {
 
       <div className="flex flex-col gap-4 xl:flex-row">
         <aside className="min-w-0 shrink-0 space-y-4 lg:w-[320px] lg:min-w-[320px] xl:w-[340px] xl:min-w-[340px]">
-          <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
+          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
             <h2 className="heading-section">
               Contact &amp; Details
             </h2>
             <div className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-slate-700">
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Registration date:</span> {user.registration_date ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Email:</span> {user.email}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Phone:</span> {user.phone ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Date of birth:</span> {user.date_of_birth ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Age:</span> {age ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Nationality:</span> {user.nationality ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Address:</span> {user.address_text ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Registration date:</span> {user.registration_date ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Email:</span> {user.email}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Phone:</span> {user.phone ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Date of birth:</span> {user.date_of_birth ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Age:</span> {age ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Nationality:</span> {user.nationality ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Address:</span> {user.address_text ?? "—"}</p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
+          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
             <h2 className="heading-section">
               Documents
             </h2>
             <ul className="mt-3 flex min-w-0 flex-col gap-2.5 text-sm text-slate-700">
-              <li className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Proof of Identity:</span> {user.proof_of_identity ?? "—"}</li>
-              <li className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm"><span className="font-medium">Proof of Address:</span> {user.proof_of_address ?? "—"}</li>
-                <li className="min-w-0 w-full break-words whitespace-normal rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm">
+              <li className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Proof of Identity:</span> {user.proof_of_identity ?? "—"}</li>
+              <li className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Proof of Address:</span> {user.proof_of_address ?? "—"}</li>
+                <li className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm">
                   <span className="font-medium">Source of funds:</span>{" "}
                   {user.source_of_funds_docs && user.source_of_funds_docs.trim().length > 0 ? (
                     user.source_of_funds_docs
@@ -1319,14 +1364,14 @@ export default function UserProfilePage() {
                 <>
               <TableSwipeHint />
               <div className="scroll-x-touch w-full min-w-0">
-              <table className="w-full min-w-[600px] table-fixed border-collapse text-sm">
+              <table className="w-full min-w-[680px] table-fixed border-collapse text-sm">
                 <colgroup>
-                  <col className="w-[16.67%]" />
-                  <col className="w-[16.67%]" />
-                  <col className="w-[16.67%]" />
-                  <col className="w-[16.67%]" />
-                  <col className="w-[16.67%]" />
-                  <col className="w-[16.67%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[11%]" />
+                  <col className="min-w-[140px] w-[42%]" />
                 </colgroup>
                 <thead>
                   <tr className="sticky top-0 z-10 border-b border-slate-200/90 bg-slate-50/95 text-left text-xs font-semibold uppercase tracking-[0.08em] text-[#264B5A] backdrop-blur-sm">
@@ -1346,7 +1391,7 @@ export default function UserProfilePage() {
                         idx % 2 === 1 ? "bg-slate-50/60" : ""
                       }`}
                     >
-                      <td className={`px-3 ${TABLE_PY_INNER}`}>
+                      <td className={`whitespace-nowrap px-3 ${TABLE_PY_INNER}`}>
                         <Link
                           href={`/alerts/${a.id}`}
                           className="font-mono text-xs text-[#264B5A] hover:underline"
@@ -1354,14 +1399,26 @@ export default function UserProfilePage() {
                           {a.id}
                         </Link>
                       </td>
-                      <td className={`px-3 text-right text-slate-600 tabular-nums ${TABLE_PY_INNER}`}>
-                        {formatDateTime(a.created_at)}
+                      <td className={`whitespace-nowrap px-3 text-right text-slate-600 tabular-nums ${TABLE_PY_INNER}`}>
+                        {formatDate(a.created_at)}
                       </td>
-                      <td className={`px-3 ${TABLE_PY_INNER}`}>{a.type ?? "—"}</td>
-                      <td className={`px-3 ${TABLE_PY_INNER}`}>{a.severity ?? "—"}</td>
-                      <td className={`px-3 ${TABLE_PY_INNER}`}>{a.status ?? "—"}</td>
-                      <td className={`max-w-0 truncate px-3 ${TABLE_PY_INNER}`} title={a.description ?? undefined}>
-                        {a.description ?? "—"}
+                      <td className={`whitespace-nowrap px-3 ${TABLE_PY_INNER}`}>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${linkedAlertTypeBadgeClass(getAlertType(a))}`}>
+                          {getAlertType(a) ? normalizeStr(getAlertType(a)).toUpperCase() : "—"}
+                        </span>
+                      </td>
+                      <td className={`whitespace-nowrap px-3 ${TABLE_PY_INNER}`}>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${linkedAlertSeverityBadgeClass(a.severity)}`}>
+                          {toTitleCase(a.severity)}
+                        </span>
+                      </td>
+                      <td className={`whitespace-nowrap px-3 ${TABLE_PY_INNER}`}>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${linkedAlertStatusBadgeClass(a.status)}`}>
+                          {toTitleCase(a.status)}
+                        </span>
+                      </td>
+                      <td className={`min-w-0 px-3 ${TABLE_PY_INNER} whitespace-normal break-words`} title={getAlertDescription(a)}>
+                        {getAlertDescription(a)}
                       </td>
                     </tr>
                   ))}

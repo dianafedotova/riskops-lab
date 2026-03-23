@@ -39,7 +39,7 @@ export default function RootLayout({
     >
       <body className="min-h-full min-w-0 bg-app-shell text-slate-200">
         <div className="mx-auto flex min-h-screen min-w-0 max-w-7xl flex-col px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:py-6 lg:px-8">
-          <header className="surface-lift mb-6 rounded-xl border border-[#345868]/80 bg-[#264B5A]/55 px-4 py-3 shadow-[0_2px_6px_rgba(2,6,23,0.16)] backdrop-blur sm:mb-8 sm:px-5 sm:py-4">
+          <header className="surface-lift mb-6 rounded-xl border border-[#345868]/80 bg-gradient-to-tl from-[#264B5A]/45 to-[#264B5A]/65 px-4 py-3 shadow-[0_2px_6px_rgba(2,6,23,0.16)] backdrop-blur sm:mb-8 sm:px-5 sm:py-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <Link
                 href="/"

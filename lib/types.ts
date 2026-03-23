@@ -33,6 +33,8 @@ export type UserRow = {
 export type AlertRow = {
   id: string;
   user_id: string | null;
+  /** Some DBs use alert_type instead of type */
+  alert_type?: string | null;
   type: string | null;
   severity: string | null;
   status: string | null;
@@ -103,4 +105,12 @@ export type UserNoteRow = {
   updated_by?: string | null;
   /** Optional; omit if not in DB */
   note_type?: "system" | "analyst" | "admin" | string | null;
+};
+
+export type AlertNoteRow = {
+  id: string;
+  alert_id: string;
+  note_text: string;
+  created_at: string;
+  created_by: string | null;
 };

@@ -140,6 +140,15 @@ insert into public.alerts (id, user_id, type, severity, status, description, cre
   'Monitoring',
   'Related case from shared device fingerprint.',
   '2026-03-18 14:22:00+00'
+),
+(
+  'a-5999',
+  'u-1002',
+  'Fraud',
+  'Low',
+  'Open',
+  'Dummy alert for UI validation and filter checks.',
+  '2026-03-21 09:30:00+00'
 )
 on conflict (id) do nothing;
 
@@ -235,4 +244,24 @@ insert into public.internal_notes (id, user_id, text, note_type, created_at) val
 ('c0000001-0000-4000-8000-000000000002', 'u-1001', 'Verified proof of address (utility bill, issued < 90 days).', 'system', '2026-03-18 11:00:00+00'),
 ('c0000001-0000-4000-8000-000000000003', 'u-1001', 'SOF docs reviewed and accepted. No further action.', 'analyst', '2026-03-19 14:00:00+00'),
 ('c0000001-0000-4000-8000-000000000004', 'u-1001', 'Case escalated to compliance for final sign-off.', 'admin', '2026-03-20 09:00:00+00')
+on conflict (id) do nothing;
+
+-- alerts_note: notes per alert (predefined + analyst)
+create table if not exists public.alerts_note (
+  id uuid primary key default gen_random_uuid(),
+  alert_id text not null references public.alerts (id) on delete cascade,
+  note_text text not null,
+  created_at timestamptz not null default now(),
+  created_by text
+);
+
+alter table public.alerts_note enable row level security;
+drop policy if exists "Allow public read alerts_note" on public.alerts_note;
+create policy "Allow public read alerts_note" on public.alerts_note for select using (true);
+drop policy if exists "Allow public insert alerts_note" on public.alerts_note;
+create policy "Allow public insert alerts_note" on public.alerts_note for insert with check (true);
+
+insert into public.alerts_note (id, alert_id, note_text, created_at, created_by) values
+('d0000001-0000-4000-8000-000000000001', 'a-5001', 'Alert triaged for fraud review.', '2026-03-20 11:45:00+00', 'system@riskopslab.com'),
+('d0000001-0000-4000-8000-000000000002', 'a-5001', 'Requesting SOF docs from user.', '2026-03-20 12:00:00+00', 'analyst@riskopslab.com')
 on conflict (id) do nothing;
