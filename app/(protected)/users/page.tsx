@@ -4,12 +4,13 @@ import { QueryErrorBanner } from "@/components/query-error";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { TABLE_PY } from "@/lib/table-padding";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase";
 import type { UserRow } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 export default function UsersPage() {
+  const supabase = createClient();
   const router = useRouter();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);

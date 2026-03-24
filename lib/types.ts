@@ -32,6 +32,8 @@ export type UserRow = {
 
 export type AlertRow = {
   id: string;
+  /** Technical UUID used for joins/comments */
+  internal_id?: string | null;
   user_id: string | null;
   /** Some DBs use alert_type instead of type */
   alert_type?: string | null;
@@ -94,17 +96,37 @@ export type OpsEventRow = {
   performed_by: string | null;
 };
 
+/** Real app user (trainee or admin), linked to auth.users */
+export type AppUserRow = {
+  id: string;
+  auth_user_id: string;
+  role: "admin" | "user";
+  email: string | null;
+  created_at: string;
+};
+
+/** Training / simulation comments only */
+export type SimulatorCommentRow = {
+  id: string;
+  user_id: string | null;
+  alert_id: string | null;
+  author_app_user_id: string;
+  author_role: "admin" | "user";
+  comment_type: "user_comment" | "admin_qa" | "admin_private";
+  parent_comment_id: string | null;
+  body: string;
+  created_at: string;
+};
+
 export type UserNoteRow = {
   id: string;
   user_id: string;
-  /** Primary column in Supabase `internal_notes` */
   note_text: string;
+  note_type?: "system" | "analyst" | "admin" | null;
   created_at: string;
   created_by: string | null;
   updated_at?: string | null;
   updated_by?: string | null;
-  /** Optional; omit if not in DB */
-  note_type?: "system" | "analyst" | "admin" | string | null;
 };
 
 export type AlertNoteRow = {

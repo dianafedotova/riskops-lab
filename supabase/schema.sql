@@ -26,6 +26,7 @@ update public.users set country_name = coalesce(country_name, nationality) where
 
 create table if not exists public.alerts (
   id text primary key,
+  internal_id uuid not null default gen_random_uuid(),
   user_id text references public.users (id) on delete cascade,
   type text,
   severity text,
@@ -33,6 +34,10 @@ create table if not exists public.alerts (
   description text,
   created_at timestamptz not null default now()
 );
+
+alter table public.alerts add column if not exists internal_id uuid;
+update public.alerts set internal_id = coalesce(internal_id, gen_random_uuid()) where internal_id is null;
+alter table public.alerts alter column internal_id set default gen_random_uuid();
 
 alter table public.users enable row level security;
 alter table public.alerts enable row level security;
@@ -265,3 +270,144 @@ insert into public.alerts_note (id, alert_id, note_text, created_at, created_by)
 ('d0000001-0000-4000-8000-000000000001', 'a-5001', 'Alert triaged for fraud review.', '2026-03-20 11:45:00+00', 'system@riskopslab.com'),
 ('d0000001-0000-4000-8000-000000000002', 'a-5001', 'Requesting SOF docs from user.', '2026-03-20 12:00:00+00', 'analyst@riskopslab.com')
 on conflict (id) do nothing;
+
+-- Read alias for alert predefined notes (same rows as alerts_note; do not insert via app)
+create or replace view public.alert_notes as
+  select id, alert_id, note_text, created_at, created_by
+  from public.alerts_note;
+
+grant select on public.alert_notes to anon, authenticated;
+
+-- Real platform users (linked to auth.users)
+create table if not exists public.app_users (
+  id uuid primary key default gen_random_uuid(),
+  auth_user_id uuid not null unique references auth.users (id) on delete cascade,
+  role text not null check (role in ('admin', 'user')),
+  email text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.app_users enable row level security;
+drop policy if exists "app_users_select_own" on public.app_users;
+create policy "app_users_select_own" on public.app_users
+  for select using (auth_user_id = auth.uid());
+
+-- Simulation / training comments only
+create table if not exists public.simulator_comments (
+  id uuid primary key default gen_random_uuid(),
+  user_id text references public.users (id) on delete cascade,
+  alert_id uuid references public.alerts (internal_id) on delete cascade,
+  author_app_user_id uuid not null references public.app_users (id) on delete cascade,
+  author_role text not null check (author_role in ('admin', 'user')),
+  comment_type text not null check (comment_type in ('user_comment', 'admin_qa', 'admin_private')),
+  parent_comment_id uuid references public.simulator_comments (id) on delete set null,
+  body text not null,
+  created_at timestamptz not null default now(),
+  constraint simulator_comment_target_check check (
+    (user_id is not null and alert_id is null) or
+    (user_id is null and alert_id is not null)
+  )
+);
+
+create index if not exists simulator_comments_user_idx
+  on public.simulator_comments (user_id, created_at desc);
+create index if not exists simulator_comments_alert_idx
+  on public.simulator_comments (alert_id, created_at desc);
+
+alter table public.simulator_comments enable row level security;
+
+drop policy if exists "sim_comments_select_admin" on public.simulator_comments;
+create policy "sim_comments_select_admin" on public.simulator_comments
+  for select using (
+    exists (select 1 from public.app_users au where au.auth_user_id = auth.uid() and au.role = 'admin')
+  );
+
+drop policy if exists "sim_comments_select_author" on public.simulator_comments;
+create policy "sim_comments_select_author" on public.simulator_comments
+  for select using (
+    exists (
+      select 1 from public.app_users me
+      where me.auth_user_id = auth.uid() and me.id = simulator_comments.author_app_user_id
+    )
+  );
+
+drop policy if exists "sim_comments_select_qa_reply" on public.simulator_comments;
+create policy "sim_comments_select_qa_reply" on public.simulator_comments
+  for select using (
+    comment_type = 'admin_qa'
+    and parent_comment_id is not null
+    and exists (
+      select 1
+      from public.simulator_comments p
+      join public.app_users me on me.auth_user_id = auth.uid()
+      where p.id = simulator_comments.parent_comment_id
+        and p.author_app_user_id = me.id
+    )
+  );
+
+drop policy if exists "sim_comments_insert_user" on public.simulator_comments;
+create policy "sim_comments_insert_user" on public.simulator_comments
+  for insert with check (
+    comment_type = 'user_comment'
+    and author_role = 'user'
+    and exists (
+      select 1 from public.app_users me
+      where me.auth_user_id = auth.uid()
+        and me.id = author_app_user_id
+        and me.role = 'user'
+    )
+    and (
+      -- top-level user comment
+      parent_comment_id is null
+      or
+      -- user follow-up reply inside own thread
+      exists (
+        select 1
+        from public.simulator_comments root
+        join public.app_users me on me.auth_user_id = auth.uid()
+        where root.id = parent_comment_id
+          and root.comment_type = 'user_comment'
+          and root.author_app_user_id = me.id
+      )
+    )
+  );
+
+drop policy if exists "sim_comments_insert_admin_qa" on public.simulator_comments;
+create policy "sim_comments_insert_admin_qa" on public.simulator_comments
+  for insert with check (
+    comment_type = 'admin_qa'
+    and author_role = 'admin'
+    and parent_comment_id is not null
+    and exists (
+      select 1 from public.app_users me
+      where me.auth_user_id = auth.uid() and me.role = 'admin'
+    )
+    and exists (
+      select 1 from public.simulator_comments p
+      where p.id = parent_comment_id
+        and p.comment_type = 'user_comment'
+    )
+  );
+
+drop policy if exists "sim_comments_insert_admin_private" on public.simulator_comments;
+create policy "sim_comments_insert_admin_private" on public.simulator_comments
+  for insert with check (
+    comment_type = 'admin_private'
+    and author_role = 'admin'
+    and parent_comment_id is null
+    and exists (
+      select 1 from public.app_users me
+      where me.auth_user_id = auth.uid()
+        and me.role = 'admin'
+        and me.id = author_app_user_id
+    )
+  );
+
+grant select on public.app_users to authenticated;
+grant select, insert on public.simulator_comments to authenticated;
+
+-- Link a Supabase Auth user to the app (run after user exists in auth.users):
+-- insert into public.app_users (auth_user_id, role, email)
+-- values ('<auth.users id uuid>', 'admin', 'admin@example.test');
+-- insert into public.app_users (auth_user_id, role, email)
+-- values ('<auth.users id uuid>', 'user', 'trainee@example.test');

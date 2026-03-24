@@ -2,13 +2,15 @@
 
 import { ageFromIsoDate, formatDate, formatDateTime, formatEventType, formatMoneyUsd, formatTransactionAmount, maskIp } from "@/lib/format";
 import { getOpsEventLabel } from "@/lib/ops-events";
-import { supabase } from "@/lib/supabase";
+import { SimulatorCommentsPanel } from "@/components/simulator-comments-panel";
+import { createClient } from "@/lib/supabase";
 import type { AlertRow, OpsEventRow, PaymentMethodRow, TransactionRow, UserEventRow, UserFinancialsRow, UserNoteRow, UserRow } from "@/lib/types";
 import Image from "next/image";
 import Link from "next/link";
 import { QueryErrorBanner } from "@/components/query-error";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { UserProfileSkeleton } from "@/components/user-profile-skeleton";
+import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { TABLE_PY_INNER } from "@/lib/table-padding";
 import { normalizeFinancialsRow } from "@/lib/user-financials";
 import { useParams } from "next/navigation";
@@ -157,14 +159,15 @@ function PaymentMethodStatusBadge({ status }: { status: string | null }) {
 }
 
 export default function UserProfilePage() {
+  const supabase = createClient();
+  const { appUser } = useCurrentUser();
   const params = useParams<{ id: string }>();
   const userId = params?.id ?? "";
   const [activeTab, setActiveTab] = useState<TabKey>("transactions");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [noteText, setNoteText] = useState("");
   const [copied, setCopied] = useState(false);
-  const [notes, setNotes] = useState<UserNoteRow[]>([]);
+  const [predefinedNotes, setPredefinedNotes] = useState<UserNoteRow[]>([]);
 
   const [user, setUser] = useState<UserRow | null>(null);
   const [userAlerts, setUserAlerts] = useState<AlertRow[]>([]);
@@ -229,7 +232,7 @@ export default function UserProfilePage() {
         setUserEvents([]);
         setLinkedAccounts([]);
         setOpsEvents([]);
-        setNotes([]);
+        setPredefinedNotes([]);
         setUserTransactions([]);
         setFinancials(null);
         setPaymentMethods([]);
@@ -244,7 +247,7 @@ export default function UserProfilePage() {
         setUserEvents([]);
         setLinkedAccounts([]);
         setOpsEvents([]);
-        setNotes([]);
+        setPredefinedNotes([]);
         setUserTransactions([]);
         setFinancials(null);
         setPaymentMethods([]);
@@ -263,7 +266,7 @@ export default function UserProfilePage() {
         return;
       }
       const userIdInternal = canonicalUserId;
-      const [alertsRes, eventsRes, txRes, finRes, pmRes, opsRes, notesRes] = await Promise.all([
+      const [alertsRes, eventsRes, txRes, finRes, pmRes, opsRes] = await Promise.all([
         supabase.from("alerts").select("*").eq("user_id", userIdInternal).order("created_at", { ascending: false }),
         supabase
           .from("user_events")
@@ -281,17 +284,8 @@ export default function UserProfilePage() {
           .from("ops_events")
           .select("*")
           .eq("user_id", userIdInternal)
-          .order("event_time", { ascending: false }),
-        supabase
-          .from("internal_notes")
-          .select("id, user_id, note_text, created_at, created_by, updated_at, updated_by")
-          .eq("user_id", canonicalUserId)
-          .order("created_at", { ascending: false })
+          .order("event_time", { ascending: false })
       ]);
-      // TEMP debug — remove after verifying Supabase
-      console.log("[profile] canonicalUserId (users.id)", canonicalUserId);
-      console.log("[profile] user_financials", { data: finRes.data, error: finRes.error });
-      console.log("[profile] internal_notes", { data: notesRes.data, error: notesRes.error });
       if (!cancelled) setUserAlerts((alertsRes.data as AlertRow[]) ?? []);
       const events = (eventsRes.data as UserEventRow[]) ?? [];
       if (!cancelled) setUserEvents(events);
@@ -320,7 +314,26 @@ export default function UserProfilePage() {
       }
       if (!cancelled) setPaymentMethods(((pmRes.data as PaymentMethodRow[]) ?? []) as UiPaymentMethod[]);
       if (!cancelled) setOpsEvents((opsRes.data as OpsEventRow[]) ?? []);
-      if (!cancelled) setNotes((notesRes.data as UserNoteRow[]) ?? []);
+      // Support both DB variants:
+      // - internal_notes.note_text (current)
+      // - internal_notes.text (legacy seed)
+      let notesData: UserNoteRow[] = [];
+      const notesPrimary = await supabase
+        .from("internal_notes")
+        .select("id, user_id, note_text, created_at, created_by")
+        .eq("user_id", canonicalUserId)
+        .order("created_at", { ascending: false });
+      if (notesPrimary.error) {
+        const notesFallback = await supabase
+          .from("internal_notes")
+          .select("id, user_id, note_text:text, created_at, created_by")
+          .eq("user_id", canonicalUserId)
+          .order("created_at", { ascending: false });
+        notesData = (notesFallback.data as UserNoteRow[]) ?? [];
+      } else {
+        notesData = (notesPrimary.data as UserNoteRow[]) ?? [];
+      }
+      if (!cancelled) setPredefinedNotes(notesData);
       if (!cancelled) {
         setTxError(txRes.error?.message ?? null);
         const tx = txRes.error ? [] : (txRes.data as TransactionRow[]) ?? [];
@@ -332,20 +345,6 @@ export default function UserProfilePage() {
       cancelled = true;
     };
   }, [userId, reloadTick]);
-
-  const addNote = async () => {
-    if (!noteText.trim() || !user?.id) return;
-    const note_text = noteText.trim();
-    setNoteText("");
-    const { data: inserted, error } = await supabase
-      .from("internal_notes")
-      .insert({ user_id: user.id, note_text })
-      .select("id, user_id, note_text, created_at, created_by, updated_at, updated_by")
-      .single();
-    if (!error && inserted) {
-      setNotes((prev) => [(inserted as UserNoteRow), ...prev]);
-    }
-  };
 
   const copyUserId = async () => {
     await navigator.clipboard.writeText(user?.id ?? "");
@@ -1432,57 +1431,41 @@ export default function UserProfilePage() {
 
           {activeTab === "notes" && (
             <div className="p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <input
-                  value={noteText}
-                  onChange={(event) => setNoteText(event.target.value)}
-                  placeholder="Leave a note..."
-                  className="min-h-11 w-full min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#264B5A] focus:ring-1 focus:ring-[#264B5A]/30 sm:min-h-0"
-                />
-                <button
-                  type="button"
-                  onClick={addNote}
-                  className="shrink-0 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 sm:min-w-[4.5rem]"
-                >
-                  Add
-                </button>
-              </div>
-              {notes.length === 0 ? (
-                <div className="mt-3">
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
-                    No notes yet.
-                  </div>
+              {user?.id ? (
+                <div className="space-y-4">
+                  {appUser?.role === "admin" ? (
+                    <>
+                      <SimulatorCommentsPanel
+                        userId={user.id}
+                        alertId={null}
+                        showTitle={false}
+                        withTopBorder={false}
+                        emptyMessage="No private notes."
+                        adminModeOverride="private"
+                      />
+                      <div className="border-t border-slate-200" />
+                      <SimulatorCommentsPanel
+                        userId={user.id}
+                        alertId={null}
+                        showTitle={false}
+                        withTopBorder={false}
+                        emptyMessage="No notes yet."
+                        adminModeOverride="reply"
+                        predefinedNotes={predefinedNotes}
+                      />
+                    </>
+                  ) : (
+                    <SimulatorCommentsPanel
+                      userId={user.id}
+                      alertId={null}
+                      showTitle={false}
+                      withTopBorder={false}
+                      emptyMessage="No notes yet."
+                      predefinedNotes={predefinedNotes}
+                    />
+                  )}
                 </div>
-              ) : (
-                <ul className="mt-3 flex flex-col gap-3">
-                  {notes.map((note) => {
-                    const noteStyle =
-                      note.note_type === "admin"
-                        ? "bg-purple-50/80 border-slate-200"
-                        : note.note_type === "analyst"
-                          ? "bg-blue-50/80 border-slate-200"
-                          : "bg-white border-slate-200";
-                    return (
-                      <li
-                        key={note.id}
-                        className={`rounded-xl border p-4 ${noteStyle}`}
-                      >
-                        <div className="mb-2 flex justify-between gap-3 text-xs text-slate-500">
-                          <span className="min-w-0 truncate text-[11px]">
-                            {note.created_by ?? "—"}
-                          </span>
-                          <span className="shrink-0 tabular-nums text-[10px]">
-                            {formatDateTime(note.created_at)}
-                          </span>
-                        </div>
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">
-                          {note.note_text}
-                        </p>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+              ) : null}
             </div>
           )}
             </div>

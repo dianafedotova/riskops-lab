@@ -2,10 +2,12 @@
 
 import { AlertDetailSkeleton } from "@/components/alert-detail-skeleton";
 import { QueryErrorBanner } from "@/components/query-error";
+import { SimulatorCommentsPanel } from "@/components/simulator-comments-panel";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { TABLE_PY_INNER } from "@/lib/table-padding";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase";
 import type { AlertNoteRow, AlertRow } from "@/lib/types";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -98,11 +100,12 @@ const decisionBadgeClass = (decision: Decision) => {
 };
 
 export default function AlertDetailsPage() {
+  const supabase = createClient();
+  const { appUser } = useCurrentUser();
   const params = useParams<{ id: string }>();
   const alertId = params?.id ?? "a-unknown";
-  const [noteText, setNoteText] = useState("");
   const [decision, setDecision] = useState<Decision>(null);
-  const [notes, setNotes] = useState<AlertNoteRow[]>([]);
+  const [predefinedNotes, setPredefinedNotes] = useState<AlertNoteRow[]>([]);
 
   const [alert, setAlert] = useState<AlertRow | null>(null);
   const [otherAlerts, setOtherAlerts] = useState<AlertRow[]>([]);
@@ -139,13 +142,12 @@ export default function AlertDetailsPage() {
       setAlert(a);
       setKeyInfo(null);
       const uid = a.user_id;
-
       const { data: notesData } = await supabase
         .from("alerts_note")
         .select("id, alert_id, note_text, created_at, created_by")
         .eq("alert_id", alertId)
         .order("created_at", { ascending: false });
-      if (!cancelled) setNotes((notesData as AlertNoteRow[]) ?? []);
+      if (!cancelled) setPredefinedNotes((notesData as AlertNoteRow[]) ?? []);
       const ruleCode = (row as AlertWithRuleCode).rule_code?.trim() ?? "";
       if (uid) {
         const { data: others } = await supabase
@@ -207,20 +209,6 @@ export default function AlertDetailsPage() {
       cancelled = true;
     };
   }, [alertId, reloadTick]);
-
-  const addNote = async () => {
-    if (!noteText.trim() || !alertId) return;
-    const note_text = noteText.trim();
-    setNoteText("");
-    const { data: inserted, error } = await supabase
-      .from("alerts_note")
-      .insert({ alert_id: alertId, note_text })
-      .select("id, alert_id, note_text, created_at, created_by")
-      .single();
-    if (!error && inserted) {
-      setNotes((prev) => [(inserted as AlertNoteRow), ...prev]);
-    }
-  };
 
   const ruleCode = ((alert as AlertWithRuleCode | null)?.rule_code ?? "").trim();
   const ruleName = ((alert as AlertWithRuleCode | null)?.rule_name ?? "").trim();
@@ -349,7 +337,7 @@ export default function AlertDetailsPage() {
                   <span>{declaredIncomeLabel}</span>
                 </p>
                 <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
-                  <span className="font-medium">30D spend:</span>
+                  <span className="font-medium">30d spend:</span>
                   <span>{formatUsd(keyInfo?.spend30dUsd ?? null, { fractionDigits: 2 })}</span>
                 </p>
                 <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
@@ -458,51 +446,32 @@ export default function AlertDetailsPage() {
         </div>
 
         <aside className="lg:col-span-4">
-          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 lg:sticky lg:top-6">
-            <h2 className="heading-section mb-3">Analyst Notes</h2>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <input
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Leave a note..."
-                className="min-h-11 w-full min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#264B5A] focus:ring-1 focus:ring-[#264B5A]/30 sm:min-h-0"
-              />
-              <button
-                type="button"
-                onClick={addNote}
-                className="shrink-0 rounded-lg bg-[#264B5A] px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-[#315E70] sm:min-w-[4.5rem]"
-              >
-                Add
-              </button>
-            </div>
-            {notes.length === 0 ? (
-              <div className="mt-3">
-                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
-                  No notes yet.
-                </div>
+          <div className="space-y-4 lg:sticky lg:top-6">
+            {appUser?.role === "admin" ? (
+              <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+                <h2 className="heading-section mb-3">Internal Notes</h2>
+                <SimulatorCommentsPanel
+                  userId={null}
+                  alertId={alert.internal_id ?? null}
+                  showTitle={false}
+                  withTopBorder={false}
+                  emptyMessage="No private notes yet."
+                  adminModeOverride="private"
+                />
               </div>
-            ) : (
-              <ul className="mt-3 flex flex-col gap-3">
-                {notes.map((note) => (
-                  <li
-                    key={note.id}
-                    className="rounded-xl border border-slate-200 bg-white p-4"
-                  >
-                    <div className="mb-2 flex justify-between gap-3 text-xs text-slate-500">
-                      <span className="min-w-0 truncate text-[11px]">
-                        {note.created_by ?? "—"}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-[10px]">
-                        {formatDateTime(note.created_at)}
-                      </span>
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">
-                      {note.note_text}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
+            ) : null}
+            <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+              <h2 className="heading-section mb-3">Analyst Notes</h2>
+              <SimulatorCommentsPanel
+                userId={null}
+                alertId={alert.internal_id ?? null}
+                showTitle={false}
+                withTopBorder={false}
+                emptyMessage="No notes yet."
+                predefinedNotes={predefinedNotes}
+                adminModeOverride={appUser?.role === "admin" ? "reply" : undefined}
+              />
+            </div>
           </div>
         </aside>
       </div>

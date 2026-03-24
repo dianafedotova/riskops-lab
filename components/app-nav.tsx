@@ -1,7 +1,9 @@
 "use client";
 
+import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { createClient } from "@/lib/supabase";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const navLinks = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
@@ -13,6 +15,14 @@ const navLinks = [
 
 export function AppNav() {
   const pathname = usePathname() ?? "";
+  const router = useRouter();
+  const { authUser, appUser, loading: authLoading } = useCurrentUser();
+
+  const onLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.refresh();
+  };
 
   return (
     <nav
@@ -36,6 +46,35 @@ export function AppNav() {
           </Link>
         );
       })}
+      {!authLoading && appUser?.role === "admin" ? (
+        <Link
+          href="/admin"
+          aria-current={pathname === "/admin" || pathname.startsWith("/admin/") ? "page" : undefined}
+          className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out sm:min-h-0 sm:py-2 ${
+            pathname === "/admin" || pathname.startsWith("/admin/")
+              ? "bg-[#315E70]/55 text-white shadow-sm"
+              : "text-slate-100 hover:bg-[#315E70]/45 hover:text-white"
+          } `}
+        >
+          Admin Panel
+        </Link>
+      ) : null}
+      {!authLoading && authUser ? (
+        <button
+          type="button"
+          onClick={onLogout}
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-100 hover:bg-[#315E70]/45 hover:text-white sm:min-h-0 sm:py-2"
+        >
+          Logout
+        </button>
+      ) : !authLoading ? (
+        <Link
+          href="/login"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-100 hover:bg-[#315E70]/45 hover:text-white sm:min-h-0 sm:py-2"
+        >
+          Login
+        </Link>
+      ) : null}
     </nav>
   );
 }

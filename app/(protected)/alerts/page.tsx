@@ -5,7 +5,7 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { formatDate } from "@/lib/format";
 import { TABLE_PY } from "@/lib/table-padding";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase";
 import type { AlertRow } from "@/lib/types";
 import { useRouter } from "next/navigation";
 
@@ -13,6 +13,7 @@ type AlertWithRuleName = AlertRow & { rule_name?: string | null };
 import { useEffect, useMemo, useState } from "react";
 
 export default function AlertsPage() {
+  const supabase = createClient();
   const router = useRouter();
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
