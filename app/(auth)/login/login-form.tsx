@@ -28,6 +28,7 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [showConfirmEmailWindow, setShowConfirmEmailWindow] = useState(false);
 
   useEffect(() => {
     if (!oauthCode || handledCodeRef.current) return;
@@ -88,7 +89,14 @@ export function LoginForm() {
     const supabase = createClient();
     const { error: signErr } = await supabase.auth.signInWithPassword({ email, password });
     if (signErr) {
-      setMessage(toFriendlyAuthError(signErr.message));
+      const lower = signErr.message.toLowerCase();
+      if (lower.includes("email not confirmed")) {
+        setShowConfirmEmailWindow(true);
+        setMessage(null);
+      } else {
+        setShowConfirmEmailWindow(false);
+        setMessage(toFriendlyAuthError(signErr.message));
+      }
       setLoading(false);
       return;
     }
@@ -116,6 +124,27 @@ export function LoginForm() {
     router.refresh();
     setLoading(false);
   };
+
+  if (showConfirmEmailWindow) {
+    return (
+      <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
+        <h1 className="text-lg font-semibold">Confirm your email</h1>
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          Please confirm your email before signing in.
+        </p>
+        <Link
+          href="/sign-in"
+          className="inline-flex w-full items-center justify-center rounded-md bg-slate-800 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-slate-700 active:translate-y-[1px] active:bg-slate-900"
+          onClick={() => {
+            setShowConfirmEmailWindow(false);
+            setMessage(null);
+          }}
+        >
+          Back to sign in
+        </Link>
+      </section>
+    );
+  }
 
   const onGoogleSignIn = async () => {
     setMessage(null);

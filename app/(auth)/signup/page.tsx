@@ -101,11 +101,8 @@ export default function SignupPage() {
     return (
       <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
         <h1 className="text-lg font-semibold">Check your email</h1>
-        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           {successMessage}
-        </p>
-        <p className="text-sm text-slate-600">
-          Once confirmed, return to the sign-in page and log in with your email and password.
         </p>
         <div className="space-y-2">
           <Link
