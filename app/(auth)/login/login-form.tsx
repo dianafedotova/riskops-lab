@@ -172,7 +172,9 @@ export function LoginForm() {
           </Link>
         </p>
       </div>
-      {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+      {message && message !== "Incorrect email or password." ? (
+        <p className="text-sm text-rose-600">{message}</p>
+      ) : null}
       {oauthLoading ? <p className="text-sm text-slate-600">Completing Google sign-in...</p> : null}
       <button
         type="button"
@@ -190,6 +192,12 @@ export function LoginForm() {
         <span>or</span>
         <span className="h-px flex-1 bg-slate-200" />
       </div>
+      {message === "Incorrect email or password." ? (
+        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2">
+          <p className="text-sm font-medium text-rose-800">Incorrect email or password.</p>
+          <p className="mt-0.5 text-xs text-rose-700">Check your credentials and try again.</p>
+        </div>
+      ) : null}
       <form onSubmit={onSubmit} className="space-y-3">
         <label className="block text-sm">
           <span className="text-slate-600">Email</span>
