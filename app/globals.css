@@ -2,11 +2,11 @@
 @import "../node_modules/tailwindcss/index.css";
 
 :root {
-  --background: #0f172a;
-  --foreground: #e2e8f0;
+  --background: #f1f5f9;
+  --foreground: #0f172a;
 
   /* App shell & content surface */
-  --app-shell-bg: #0f172a;
+  --app-shell-bg: #f1f5f9;
   --surface-main: #e2e8f0;
   --surface-panel: #f8fafc;
   --surface-muted: #f1f5f9;

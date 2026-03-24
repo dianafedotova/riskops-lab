@@ -234,6 +234,11 @@ export function LoginForm() {
           Forgot password?
         </Link>
       </p>
+      <p className="text-center text-[11px] text-slate-500">
+        <Link href="/" className="underline">
+          Back to home page
+        </Link>
+      </p>
     </section>
   );
 }

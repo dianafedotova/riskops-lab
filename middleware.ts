@@ -40,7 +40,6 @@ export async function middleware(request: NextRequest) {
     path === "/reset-password" ||
     path === "/auth/callback";
   const isProtectedPath =
-    path === "/" ||
     path === "/dashboard" ||
     path === "/users" ||
     path.startsWith("/users/") ||

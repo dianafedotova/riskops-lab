@@ -5,8 +5,14 @@ import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
-const navLinks = [
+const publicNavLinks = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
+  { href: "/guide", label: "Guide", match: (p: string) => p === "/guide" },
+  { href: "/about", label: "About", match: (p: string) => p === "/about" },
+] as const;
+
+const privateNavLinks = [
+  { href: "/dashboard", label: "Dashboard", match: (p: string) => p === "/dashboard" },
   { href: "/users", label: "Users", match: (p: string) => p === "/users" || p.startsWith("/users/") },
   { href: "/alerts", label: "Alerts", match: (p: string) => p === "/alerts" || p.startsWith("/alerts/") },
   { href: "/guide", label: "Guide", match: (p: string) => p === "/guide" },
@@ -17,6 +23,9 @@ export function AppNav() {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const { authUser, appUser, loading: authLoading } = useCurrentUser();
+  const navLinks = (authUser ? privateNavLinks : publicNavLinks).filter(
+    (link) => !(link.href === "/" && pathname === "/" && !authUser)
+  );
 
   const onLogout = async () => {
     const supabase = createClient();
@@ -40,7 +49,7 @@ export function AppNav() {
             className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out sm:min-h-0 sm:py-2 ${
               active
                 ? "bg-[#315E70]/55 text-white shadow-sm"
-                : "text-slate-100 hover:bg-[#315E70]/45 hover:text-white"
+                : "text-slate-700 hover:bg-slate-200 hover:text-slate-900"
             } `}
           >
             {link.label}
@@ -54,7 +63,7 @@ export function AppNav() {
           className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out sm:min-h-0 sm:py-2 ${
             pathname === "/admin" || pathname.startsWith("/admin/")
               ? "bg-[#315E70]/55 text-white shadow-sm"
-              : "text-slate-100 hover:bg-[#315E70]/45 hover:text-white"
+              : "text-slate-700 hover:bg-slate-200 hover:text-slate-900"
           } `}
         >
           Admin Panel
@@ -64,17 +73,19 @@ export function AppNav() {
         <button
           type="button"
           onClick={onLogout}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-100 hover:bg-[#315E70]/45 hover:text-white sm:min-h-0 sm:py-2"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 hover:text-slate-900 sm:min-h-0 sm:py-2"
         >
           Logout
         </button>
       ) : !authLoading ? (
-        <Link
-          href="/sign-in"
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-100 hover:bg-[#315E70]/45 hover:text-white sm:min-h-0 sm:py-2"
-        >
-          Login
-        </Link>
+        <>
+          <Link
+            href="/sign-in"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-[#315E70]/55 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#315E70]/70 sm:min-h-0 sm:py-2"
+          >
+            Sign in
+          </Link>
+        </>
       ) : null}
     </nav>
   );

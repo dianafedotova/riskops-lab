@@ -227,6 +227,11 @@ export default function SignupPage() {
           {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
+      <p className="text-center text-[11px] text-slate-500">
+        <Link href="/" className="underline">
+          Back to home page
+        </Link>
+      </p>
     </section>
   );
 }
