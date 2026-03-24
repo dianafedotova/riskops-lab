@@ -1,6 +1,7 @@
 "use client";
 
 import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
+import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -29,10 +30,10 @@ export default function SignupPage() {
     setSuccessMessage(null);
     setGoogleLoading(true);
     const supabase = createClient();
-    const redirectTo = `${window.location.origin}/auth/callback`;
+    const redirectTo = getAuthRedirectUrl("/auth/callback");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo },
+      options: redirectTo ? { redirectTo } : undefined,
     });
     if (error) {
       setMessage(error.message);
