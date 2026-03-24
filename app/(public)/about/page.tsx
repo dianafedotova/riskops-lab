@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function AboutPage() {
   return (
-    <section className="space-y-5 rounded-2xl border border-slate-300 bg-slate-50 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
+    <section className="space-y-5 rounded-2xl bg-slate-50 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -14,7 +14,7 @@ export default function AboutPage() {
         </div>
         <Link
           href="/"
-          className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+          className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
         >
           Back to Home
         </Link>
@@ -41,7 +41,7 @@ export default function AboutPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-amber-300 bg-amber-100 p-4 text-sm text-amber-900">
+      <div className="rounded-xl bg-amber-100/95 p-4 text-sm text-amber-900 shadow-sm">
         Not for production use. RiskOps Lab does not include live integrations,
         regulatory controls, or complete operational safeguards.
       </div>

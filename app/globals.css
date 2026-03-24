@@ -2,11 +2,11 @@
 @import "../node_modules/tailwindcss/index.css";
 
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
+  --background: #0b1430;
+  --foreground: #e2e8f0;
 
   /* App shell & content surface */
-  --app-shell-bg: #f1f5f9;
+  --app-shell-bg: #0b1430;
   --surface-main: #e2e8f0;
   --surface-panel: #f8fafc;
   --surface-muted: #f1f5f9;
@@ -14,9 +14,9 @@
   --border-subtle: rgb(226 232 240 / 0.95);
 
   /* Brand */
-  --brand-600: #264b5a;
-  --brand-500: #315e70;
-  --brand-ring: rgb(126 166 183 / 0.75);
+  --brand-600: #2d5f70;
+  --brand-500: #3f7f91;
+  --brand-ring: rgb(111 177 193 / 0.7);
 
   /* Elevation */
   --shadow-soft: 0 2px 8px rgb(0 0 0 / 0.06);
@@ -117,7 +117,7 @@ body {
 /* Main content shell: light substrate inside dark app frame */
 .main-content-shell {
   border-radius: 1rem;
-  border: 1px solid rgb(51 65 85 / 0.35);
+  border: 0;
   background: var(--surface-main);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
   min-height: min(70vh, calc(100vh - 10rem));
@@ -126,7 +126,7 @@ body {
 
 .page-panel {
   border-radius: 1rem;
-  border: 1px solid var(--border-app);
+  border: 0;
   background: var(--surface-panel);
   box-shadow: var(--shadow-panel);
 }

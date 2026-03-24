@@ -287,10 +287,28 @@ create table if not exists public.app_users (
   created_at timestamptz not null default now()
 );
 
+-- Match rows to the JWT user by auth.users id or by email (fixes mis-linked auth_user_id).
+create or replace function public.app_user_matches_jwt(p_auth_user_id uuid, p_email text)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select p_auth_user_id = auth.uid()
+    or (
+      p_email is not null
+      and btrim(p_email) <> ''
+      and auth.jwt() ->> 'email' is not null
+      and lower(btrim(p_email)) = lower(btrim(auth.jwt() ->> 'email'))
+    );
+$$;
+
+grant execute on function public.app_user_matches_jwt(uuid, text) to authenticated;
+
 alter table public.app_users enable row level security;
 drop policy if exists "app_users_select_own" on public.app_users;
 create policy "app_users_select_own" on public.app_users
-  for select using (auth_user_id = auth.uid());
+  for select using (public.app_user_matches_jwt(auth_user_id, email));
 
 -- Simulation / training comments only
 create table if not exists public.simulator_comments (
@@ -319,7 +337,12 @@ alter table public.simulator_comments enable row level security;
 drop policy if exists "sim_comments_select_admin" on public.simulator_comments;
 create policy "sim_comments_select_admin" on public.simulator_comments
   for select using (
-    exists (select 1 from public.app_users au where au.auth_user_id = auth.uid() and au.role = 'admin')
+    exists (
+      select 1
+      from public.app_users au
+      where public.app_user_matches_jwt(au.auth_user_id, au.email)
+        and au.role = 'admin'
+    )
   );
 
 drop policy if exists "sim_comments_select_author" on public.simulator_comments;
@@ -327,7 +350,8 @@ create policy "sim_comments_select_author" on public.simulator_comments
   for select using (
     exists (
       select 1 from public.app_users me
-      where me.auth_user_id = auth.uid() and me.id = simulator_comments.author_app_user_id
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.id = simulator_comments.author_app_user_id
     )
   );
 
@@ -339,7 +363,8 @@ create policy "sim_comments_select_qa_reply" on public.simulator_comments
     and exists (
       select 1
       from public.simulator_comments p
-      join public.app_users me on me.auth_user_id = auth.uid()
+      join public.app_users me
+        on public.app_user_matches_jwt(me.auth_user_id, me.email)
       where p.id = simulator_comments.parent_comment_id
         and p.author_app_user_id = me.id
     )
@@ -352,7 +377,7 @@ create policy "sim_comments_insert_user" on public.simulator_comments
     and author_role = 'user'
     and exists (
       select 1 from public.app_users me
-      where me.auth_user_id = auth.uid()
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
         and me.id = author_app_user_id
         and me.role = 'user'
     )
@@ -364,7 +389,8 @@ create policy "sim_comments_insert_user" on public.simulator_comments
       exists (
         select 1
         from public.simulator_comments root
-        join public.app_users me on me.auth_user_id = auth.uid()
+        join public.app_users me
+          on public.app_user_matches_jwt(me.auth_user_id, me.email)
         where root.id = parent_comment_id
           and root.comment_type = 'user_comment'
           and root.author_app_user_id = me.id
@@ -380,7 +406,8 @@ create policy "sim_comments_insert_admin_qa" on public.simulator_comments
     and parent_comment_id is not null
     and exists (
       select 1 from public.app_users me
-      where me.auth_user_id = auth.uid() and me.role = 'admin'
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'admin'
     )
     and exists (
       select 1 from public.simulator_comments p
@@ -397,7 +424,7 @@ create policy "sim_comments_insert_admin_private" on public.simulator_comments
     and parent_comment_id is null
     and exists (
       select 1 from public.app_users me
-      where me.auth_user_id = auth.uid()
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
         and me.role = 'admin'
         and me.id = author_app_user_id
     )

@@ -1,7 +1,8 @@
 "use client";
 
-import { createClient } from "@/lib/supabase";
+import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
+import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -108,13 +109,15 @@ export function LoginForm() {
       setLoading(false);
       return;
     }
-    const { error: appErr } = await supabase
-      .from("app_users")
-      .select("id, role")
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
-    if (appErr) {
+    let { error: profileErr } = await fetchAppUserRow(supabase, user);
+    if (profileErr) {
+      await new Promise((r) => setTimeout(r, 250));
+      profileErr = (await fetchAppUserRow(supabase, user)).error;
+    }
+    if (profileErr) {
       setMessage("Signed in, but profile check failed. Please reload in a moment.");
+      setLoading(false);
+      return;
     }
     const dest =
       nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
@@ -127,7 +130,7 @@ export function LoginForm() {
 
   if (showConfirmEmailWindow) {
     return (
-      <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
+      <section className="mx-auto max-w-md space-y-4 rounded-xl border border-slate-300 bg-white p-6 text-slate-900">
         <h1 className="text-lg font-semibold">Confirm your email</h1>
         <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
           Please confirm your email before signing in.
@@ -162,7 +165,7 @@ export function LoginForm() {
   };
 
   return (
-    <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
+    <section className="mx-auto max-w-md space-y-4 rounded-xl border border-slate-300 bg-white p-6 text-slate-900">
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-lg font-semibold">Login</h1>
         <p className="pt-0.5 text-xs text-slate-600">

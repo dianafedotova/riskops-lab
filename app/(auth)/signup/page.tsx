@@ -99,7 +99,7 @@ export default function SignupPage() {
 
   if (successMessage) {
     return (
-      <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
+      <section className="mx-auto max-w-md space-y-4 rounded-xl border border-slate-300 bg-white p-6 text-slate-900">
         <h1 className="text-lg font-semibold">Check your email</h1>
         <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           {successMessage}
@@ -117,7 +117,7 @@ export default function SignupPage() {
   }
 
   return (
-    <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
+    <section className="mx-auto max-w-md space-y-4 rounded-xl border border-slate-300 bg-white p-6 text-slate-900">
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-lg font-semibold">Sign up</h1>
         <p className="pt-0.5 text-xs text-slate-600">

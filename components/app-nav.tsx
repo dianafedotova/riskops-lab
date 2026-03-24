@@ -48,8 +48,8 @@ export function AppNav() {
             aria-current={active ? "page" : undefined}
             className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out sm:min-h-0 sm:py-2 ${
               active
-                ? "bg-[#315E70]/55 text-white shadow-sm"
-                : "text-slate-700 hover:bg-slate-200 hover:text-slate-900"
+                ? "bg-[#6f9fb0]/35 text-slate-800 shadow-sm"
+                : "text-slate-700 hover:bg-[#6f9fb0]/18 hover:text-slate-900"
             } `}
           >
             {link.label}
@@ -62,8 +62,8 @@ export function AppNav() {
           aria-current={pathname === "/admin" || pathname.startsWith("/admin/") ? "page" : undefined}
           className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out sm:min-h-0 sm:py-2 ${
             pathname === "/admin" || pathname.startsWith("/admin/")
-              ? "bg-[#315E70]/55 text-white shadow-sm"
-              : "text-slate-700 hover:bg-slate-200 hover:text-slate-900"
+              ? "bg-[#6f9fb0]/35 text-slate-800 shadow-sm"
+              : "text-slate-700 hover:bg-[#6f9fb0]/18 hover:text-slate-900"
           } `}
         >
           Admin Panel
@@ -81,7 +81,7 @@ export function AppNav() {
         <>
           <Link
             href="/sign-in"
-            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-[#315E70]/55 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#315E70]/70 sm:min-h-0 sm:py-2"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-[#5e8d9c]/80 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4f7e8d]/85 sm:min-h-0 sm:py-2"
           >
             Sign in
           </Link>

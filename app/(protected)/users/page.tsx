@@ -182,7 +182,7 @@ export default function UsersPage() {
         <QueryErrorBanner message={error} onRetry={() => setReloadTick((n) => n + 1)} hint={hint} />
       )}
 
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200/90 bg-slate-50/60 p-3 sm:p-3">
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200/90 bg-slate-50/70 p-3 shadow-sm sm:p-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
           <div className="min-w-0 w-full max-w-md flex-1">
             <label htmlFor="users-search" className="mb-1 block text-xs font-medium text-slate-600">
@@ -330,7 +330,7 @@ export default function UsersPage() {
               type="button"
               onClick={resetFilters}
               disabled={!isFiltersActive}
-              className="h-10 shrink-0 self-end rounded-lg border border-slate-200 bg-transparent px-3 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-10 shrink-0 self-end rounded-lg bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Reset filters
             </button>
@@ -338,7 +338,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-slate-50/40">
+      <div className="overflow-hidden rounded-xl bg-slate-50/50 shadow-sm">
         <TableSwipeHint />
         <div className="scroll-x-touch">
         <table className="w-full table-fixed min-w-[860px] border-collapse text-sm">
@@ -428,7 +428,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-300 pt-3 text-sm text-slate-600">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 text-sm text-slate-600">
         <p>
           {loading
             ? "…"
@@ -442,7 +442,7 @@ export default function UsersPage() {
             id="users-per-page"
             value={itemsPerPage}
             onChange={(e) => setItemsPerPage(Number(e.target.value))}
-            className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+            className="rounded-md bg-slate-100 px-2 py-1 shadow-sm"
           >
             <option>10</option>
             <option>25</option>
@@ -454,18 +454,18 @@ export default function UsersPage() {
             type="button"
             disabled={currentPage <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="rounded-md border border-slate-200 px-2.5 py-1 text-sm transition-colors duration-150 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-slate-100 px-2.5 py-1 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Previous
           </button>
-          <button type="button" className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm">
+          <button type="button" className="rounded-md bg-slate-200 px-2.5 py-1 text-sm text-slate-700 shadow-sm">
             {currentPage}
           </button>
           <button
             type="button"
             disabled={currentPage >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="rounded-md border border-slate-200 px-2.5 py-1 text-sm transition-colors duration-150 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-slate-100 px-2.5 py-1 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Next
           </button>

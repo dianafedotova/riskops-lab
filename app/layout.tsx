@@ -24,7 +24,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: "#f1f5f9",
+  themeColor: "#0b1430",
 };
 
 export default function RootLayout({
@@ -37,7 +37,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full min-w-0 bg-app-shell text-slate-900">
+      <body className="min-h-full min-w-0 bg-app-shell text-slate-200">
         {children}
         <Analytics />
         <SpeedInsights />

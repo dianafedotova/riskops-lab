@@ -1,3 +1,4 @@
+import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -82,11 +83,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const { data: appUser } = await supabase
-    .from("app_users")
-    .select("id, role")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  const { row: appUser } = await fetchAppUserRow(supabase, user);
 
   if (path.startsWith("/admin") && appUser?.role !== "admin") {
     return NextResponse.redirect(new URL("/", request.url));

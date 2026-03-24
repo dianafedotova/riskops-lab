@@ -155,7 +155,7 @@ export default function AlertsPage() {
         <QueryErrorBanner message={error} onRetry={() => setReloadTick((n) => n + 1)} hint={hint} />
       )}
 
-      <div className="min-w-0 overflow-visible rounded-xl border border-slate-200/90 bg-gradient-to-b from-slate-50/50 to-slate-100 p-3">
+      <div className="min-w-0 overflow-visible rounded-xl border border-slate-200/90 bg-slate-50/70 p-3 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
         <div className="flex min-w-0 flex-col gap-1 sm:w-72 sm:shrink-0">
           <label htmlFor="alerts-search" className="text-xs font-medium text-slate-600">
@@ -227,7 +227,7 @@ export default function AlertsPage() {
             type="button"
             onClick={resetFilters}
             disabled={!isFiltersActive}
-            className="h-10 shrink-0 rounded-lg border border-slate-200 bg-transparent px-3 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-10 shrink-0 rounded-lg bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Reset filters
           </button>
@@ -235,7 +235,7 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-b from-slate-50/50 to-slate-100">
+      <div className="min-w-0 overflow-hidden rounded-xl bg-slate-50/50 shadow-sm">
         <TableSwipeHint />
         <div className="scroll-x-touch">
         <table className="w-full min-w-[720px] table-fixed border-collapse text-sm">
@@ -312,7 +312,7 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-300 pt-3 text-sm text-slate-600">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 text-sm text-slate-600">
         <p>
           {loading
             ? "…"
@@ -326,7 +326,7 @@ export default function AlertsPage() {
             id="alerts-per-page"
             value={itemsPerPage}
             onChange={(e) => setItemsPerPage(Number(e.target.value))}
-            className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1"
+            className="rounded-md bg-slate-100 px-2 py-1 shadow-sm"
           >
             <option>10</option>
             <option>25</option>
@@ -338,18 +338,18 @@ export default function AlertsPage() {
             type="button"
             disabled={currentPage <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="rounded-md border border-slate-300 px-2.5 py-1 text-sm transition-colors duration-150 hover:bg-slate-200"
+            className="rounded-md bg-slate-100 px-2.5 py-1 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Previous
           </button>
-          <button type="button" className="rounded-md border border-slate-300 bg-slate-200 px-2.5 py-1 text-sm">
+          <button type="button" className="rounded-md bg-slate-200 px-2.5 py-1 text-sm text-slate-700 shadow-sm">
             {currentPage}
           </button>
           <button
             type="button"
             disabled={currentPage >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="rounded-md border border-slate-300 px-2.5 py-1 text-sm transition-colors duration-150 hover:bg-slate-200"
+            className="rounded-md bg-slate-100 px-2.5 py-1 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Next
           </button>

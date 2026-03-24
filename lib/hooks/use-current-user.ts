@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { createClient } from "@/lib/supabase";
 import type { AppUserRow } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
@@ -32,16 +33,12 @@ export function useCurrentUser() {
       setLoading(false);
       return;
     }
-    const { data: row, error: appErr } = await supabase
-      .from("app_users")
-      .select("id, auth_user_id, role, email, created_at")
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
+    const { row, error: appErr } = await fetchAppUserRow(supabase, user);
     if (appErr) {
       setError(appErr.message);
       setAppUser(null);
     } else {
-      setAppUser((row as AppUserRow) ?? null);
+      setAppUser(row);
     }
     setLoading(false);
   }, []);
