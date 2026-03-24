@@ -97,6 +97,28 @@ export default function SignupPage() {
     setLoading(false);
   };
 
+  if (successMessage) {
+    return (
+      <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
+        <h1 className="text-lg font-semibold">Check your email</h1>
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {successMessage}
+        </p>
+        <p className="text-sm text-slate-600">
+          Once confirmed, return to the sign-in page and log in with your email and password.
+        </p>
+        <div className="space-y-2">
+          <Link
+            href="/sign-in"
+            className="inline-flex w-full items-center justify-center rounded-md bg-slate-800 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-slate-700 active:translate-y-[1px] active:bg-slate-900"
+          >
+            Go to sign in
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
       <div className="flex items-start justify-between gap-3">
@@ -110,7 +132,6 @@ export default function SignupPage() {
       </div>
 
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
-      {successMessage ? <p className="text-sm text-emerald-700">{successMessage}</p> : null}
 
       <button
         type="button"

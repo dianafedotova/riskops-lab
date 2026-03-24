@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function toFriendlyAuthError(message: string): string {
   const lower = message.toLowerCase();
@@ -18,12 +18,68 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "";
+  const oauthCode = searchParams.get("code");
+  const authType = searchParams.get("type");
+  const handledCodeRef = useRef(false);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
+
+  useEffect(() => {
+    if (!oauthCode || handledCodeRef.current) return;
+    handledCodeRef.current = true;
+    let cancelled = false;
+    (async () => {
+      setMessage(null);
+      setOauthLoading(true);
+
+      // Email confirmation / recovery links can arrive with query params
+      // that are not OAuth PKCE callbacks. Keep UX smooth and avoid false errors.
+      if (authType === "signup") {
+        if (!cancelled) {
+          setOauthLoading(false);
+          setMessage("Email confirmed. You can now sign in.");
+          const params = new URLSearchParams(searchParams.toString());
+          params.delete("code");
+          params.delete("type");
+          router.replace(`/sign-in${params.toString() ? `?${params.toString()}` : ""}`);
+        }
+        return;
+      }
+
+      const supabase = createClient();
+      const { error } = await supabase.auth.exchangeCodeForSession(oauthCode);
+      if (error) {
+        if (!cancelled) {
+          const lower = error.message.toLowerCase();
+          if (lower.includes("pkce code verifier not found")) {
+            setMessage("Email confirmed. Please sign in with your email and password.");
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("code");
+            params.delete("type");
+            router.replace(`/sign-in${params.toString() ? `?${params.toString()}` : ""}`);
+          } else {
+            setMessage(toFriendlyAuthError(error.message));
+          }
+          setOauthLoading(false);
+        }
+        return;
+      }
+      const dest =
+        nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+          ? nextPath
+          : "/dashboard";
+      router.replace(dest);
+      router.refresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [oauthCode, authType, nextPath, router, searchParams]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,10 +144,11 @@ export function LoginForm() {
         </p>
       </div>
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+      {oauthLoading ? <p className="text-sm text-slate-600">Completing Google sign-in...</p> : null}
       <button
         type="button"
         onClick={onGoogleSignIn}
-        disabled={googleLoading || loading}
+        disabled={googleLoading || loading || oauthLoading}
         className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white py-2 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-semibold">
@@ -129,7 +186,7 @@ export function LoginForm() {
         </label>
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || oauthLoading}
           className="w-full rounded-md bg-slate-800 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-slate-700 active:translate-y-[1px] active:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/60 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Signing in..." : "Sign in"}
