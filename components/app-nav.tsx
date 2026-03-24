@@ -21,6 +21,7 @@ export function AppNav() {
   const onLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
+    router.replace("/sign-in");
     router.refresh();
   };
 
@@ -69,7 +70,7 @@ export function AppNav() {
         </button>
       ) : !authLoading ? (
         <Link
-          href="/login"
+          href="/sign-in"
           className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-100 hover:bg-[#315E70]/45 hover:text-white sm:min-h-0 sm:py-2"
         >
           Login

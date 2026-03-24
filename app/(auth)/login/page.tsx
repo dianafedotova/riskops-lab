@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { LoginForm } from "./login-form";
+import { redirect } from "next/navigation";
 
 export default function LoginPage() {
-  return (
-    <Suspense fallback={<p className="text-sm text-slate-300">Loading...</p>}>
-      <LoginForm />
-    </Suspense>
-  );
+  redirect("/sign-in");
 }

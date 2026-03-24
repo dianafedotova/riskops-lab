@@ -5,18 +5,24 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+function toFriendlyAuthError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("invalid login credentials")) return "Incorrect email or password.";
+  if (lower.includes("email not confirmed")) return "Please confirm your email before signing in.";
+  if (lower.includes("network")) return "Network error. Please try again.";
+  return message;
+}
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "";
-  const errParam = searchParams.get("error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState<string | null>(
-    errParam === "not_registered" ? "User not registered in app_users" : null
-  );
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +31,7 @@ export function LoginForm() {
     const supabase = createClient();
     const { error: signErr } = await supabase.auth.signInWithPassword({ email, password });
     if (signErr) {
-      setMessage(signErr.message);
+      setMessage(toFriendlyAuthError(signErr.message));
       setLoading(false);
       return;
     }
@@ -37,37 +43,36 @@ export function LoginForm() {
       setLoading(false);
       return;
     }
-    const { data: appUser, error: appErr } = await supabase
+    const { error: appErr } = await supabase
       .from("app_users")
       .select("id, role")
       .eq("auth_user_id", user.id)
       .maybeSingle();
     if (appErr) {
-      setMessage(appErr.message);
-      await supabase.auth.signOut();
-      setLoading(false);
-      return;
-    }
-    if (!appUser) {
-      setMessage("User not registered in app_users");
-      await supabase.auth.signOut();
-      setLoading(false);
-      return;
+      setMessage("Signed in, but profile check failed. Please reload in a moment.");
     }
     const dest =
       nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
         ? nextPath
-        : "/";
+        : "/dashboard";
     router.push(dest);
     router.refresh();
     setLoading(false);
   };
 
-  const onSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.refresh();
+  const onGoogleSignIn = async () => {
     setMessage(null);
+    setGoogleLoading(true);
+    const supabase = createClient();
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo },
+    });
+    if (error) {
+      setMessage(toFriendlyAuthError(error.message));
+      setGoogleLoading(false);
+    }
   };
 
   return (
@@ -82,6 +87,22 @@ export function LoginForm() {
         </p>
       </div>
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+      <button
+        type="button"
+        onClick={onGoogleSignIn}
+        disabled={googleLoading || loading}
+        className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white py-2 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-semibold">
+          G
+        </span>
+        {googleLoading ? "Redirecting..." : "Continue with Google"}
+      </button>
+      <div className="flex items-center gap-3 text-xs text-slate-400">
+        <span className="h-px flex-1 bg-slate-200" />
+        <span>or</span>
+        <span className="h-px flex-1 bg-slate-200" />
+      </div>
       <form onSubmit={onSubmit} className="space-y-3">
         <label className="block text-sm">
           <span className="text-slate-600">Email</span>
@@ -113,11 +134,6 @@ export function LoginForm() {
           {loading ? "Signing in..." : "Sign in"}
         </button>
       </form>
-      {errParam === "not_registered" ? (
-        <button type="button" onClick={onSignOut} className="text-sm text-slate-600 underline">
-          Sign out (clear session)
-        </button>
-      ) : null}
       <p className="text-sm text-slate-600">
         <Link href="/forgot-password" className="block text-center text-xs underline">
           Forgot password?
