@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppNav } from "@/components/app-nav";
+import { LegalFooter } from "@/components/legal-footer";
 
 export default function PublicLayout({
   children,
@@ -28,6 +29,7 @@ export default function PublicLayout({
       <main className="min-w-0 flex-1 pb-6 sm:pb-8">
         <div className="main-content-shell p-3 sm:p-5 md:p-6">{children}</div>
       </main>
+      <LegalFooter />
     </div>
   );
 }

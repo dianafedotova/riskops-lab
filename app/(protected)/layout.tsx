@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppNav } from "@/components/app-nav";
+import { LegalFooter } from "@/components/legal-footer";
 
 export default function ProtectedLayout({
   children,
@@ -28,23 +29,7 @@ export default function ProtectedLayout({
       <main className="min-w-0 flex-1 pb-6 sm:pb-8">
         <div className="main-content-shell p-3 sm:p-5 md:p-6">{children}</div>
       </main>
-      <footer className="flex flex-col gap-3 border-t border-slate-700 pt-4 text-xs text-slate-400 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <p>RiskOps Lab simulator - training UI for fraud and AML reviews.</p>
-        <div className="flex items-center gap-4">
-          <Link
-            href="/terms"
-            className="rounded transition-colors duration-150 hover:text-[#7EA6B7] hover:underline"
-          >
-            Terms &amp; Conditions
-          </Link>
-          <Link
-            href="/privacy"
-            className="rounded transition-colors duration-150 hover:text-[#7EA6B7] hover:underline"
-          >
-            Privacy
-          </Link>
-        </div>
-      </footer>
+      <LegalFooter />
     </div>
   );
 }
