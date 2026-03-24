@@ -610,7 +610,7 @@ export default function UserProfilePage() {
         / <span className="text-slate-700">{displayName}</span>
       </nav>
 
-      <div className="flex min-w-0 flex-row items-start gap-4 overflow-hidden rounded-xl border border-slate-200/90 bg-gradient-to-b from-slate-50/50 to-slate-100 px-4 py-3 shadow-sm ring-1 ring-slate-200/50 sm:items-center sm:overflow-visible sm:p-5">
+      <div className="flex min-w-0 flex-row items-start gap-4 overflow-hidden rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 px-4 py-3 shadow-sm sm:items-center sm:overflow-visible sm:p-5">
         <div className="shrink-0 sm:self-center">
           <div className="relative h-12 w-12 overflow-hidden rounded-full border border-slate-300 bg-slate-200 shadow-sm sm:h-[7.5rem] sm:w-[7.5rem]">
           {selfieUrl && !selfieLoadFailed ? (
@@ -815,29 +815,29 @@ export default function UserProfilePage() {
 
       <div className="flex flex-col gap-4 xl:flex-row">
         <aside className="min-w-0 shrink-0 space-y-4 lg:w-[320px] lg:min-w-[320px] xl:w-[340px] xl:min-w-[340px]">
-          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+          <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
             <h2 className="heading-section">
               Contact &amp; Details
             </h2>
             <div className="mt-3 flex min-w-0 flex-col gap-2 text-sm text-slate-700">
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Registration date:</span> {user.registration_date ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Email:</span> {user.email}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Phone:</span> {user.phone ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Date of birth:</span> {user.date_of_birth ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Age:</span> {age ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Nationality:</span> {user.nationality ?? "—"}</p>
-              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Address:</span> {user.address_text ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Registration date:</span> {user.registration_date ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Email:</span> {user.email}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Phone:</span> {user.phone ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Date of birth:</span> {user.date_of_birth ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Age:</span> {age ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Nationality:</span> {user.nationality ?? "—"}</p>
+              <p className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Address:</span> {user.address_text ?? "—"}</p>
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+          <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
             <h2 className="heading-section">
               Documents
             </h2>
             <ul className="mt-3 flex min-w-0 flex-col gap-2.5 text-sm text-slate-700">
-              <li className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Proof of Identity:</span> {user.proof_of_identity ?? "—"}</li>
-              <li className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm"><span className="font-medium">Proof of Address:</span> {user.proof_of_address ?? "—"}</li>
-                <li className="min-w-0 w-full break-words whitespace-normal rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-sm">
+              <li className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Proof of Identity:</span> {user.proof_of_identity ?? "—"}</li>
+              <li className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm"><span className="font-medium">Proof of Address:</span> {user.proof_of_address ?? "—"}</li>
+                <li className="min-w-0 w-full break-words whitespace-normal rounded-lg bg-white px-3 py-2 shadow-sm">
                   <span className="font-medium">Source of funds:</span>{" "}
                   {user.source_of_funds_docs && user.source_of_funds_docs.trim().length > 0 ? (
                     user.source_of_funds_docs
@@ -853,7 +853,7 @@ export default function UserProfilePage() {
         </aside>
 
         <div className="min-w-0 flex-1 space-y-4">
-          <div className="overflow-visible rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60 sm:overflow-hidden">
+          <div className="overflow-visible rounded-2xl bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] sm:overflow-hidden">
             <div className="border-b border-slate-200/80 bg-gradient-to-b from-slate-50 to-slate-100/60 px-2 py-3 sm:px-4 sm:py-3">
               <label id="profile-section-label" className="sr-only">
                 Profile section

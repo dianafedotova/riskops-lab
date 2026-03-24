@@ -276,7 +276,7 @@ export default function AlertDetailsPage() {
 
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="min-w-0 space-y-4 lg:col-span-8">
-          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 sm:p-5">
+          <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm sm:p-5">
             <h2 className="heading-section mb-3">Alert Information</h2>
             <div className="space-y-3">
               <p className="font-mono text-sm text-slate-600">
@@ -295,25 +295,25 @@ export default function AlertDetailsPage() {
               </h3>
 
               <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2 lg:grid-cols-4">
-                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
+                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
                   <span className="font-medium">Status:</span>
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(displayStatus)}`}>
                     {formatStatusLabel(displayStatus)}
                   </span>
                 </p>
-                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
+                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
                   <span className="font-medium">Type:</span>
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${typeBadgeClass(alert?.alert_type ?? alert?.type ?? null)}`}>
                     {formatStatusLabel(alert?.alert_type ?? alert?.type ?? "")}
                   </span>
                 </p>
-                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
+                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
                   <span className="font-medium">Severity:</span>
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(alert?.severity ?? null)}`}>
                     {formatSeverityLabel(alert?.severity)}
                   </span>
                 </p>
-                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
+                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg bg-white/90 px-3 py-2 shadow-sm lg:flex-col lg:items-start lg:gap-x-0 lg:gap-y-1">
                   <span className="font-medium">Decision:</span>
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${decisionBadgeClass(decision)}`}>
                     {getDecisionLabel(decision)}
@@ -323,24 +323,24 @@ export default function AlertDetailsPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+          <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
             <h2 className="heading-section mb-3">Description</h2>
             <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{alert.description ?? ""}</p>
           </div>
 
           {ruleCode === "AML_001" && (
-            <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+            <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
               <h2 className="heading-section mb-3">Key Info</h2>
               <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2 lg:grid-cols-3">
-                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
+                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
                   <span className="font-medium">Declared income:</span>
                   <span>{declaredIncomeLabel}</span>
                 </p>
-                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
+                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
                   <span className="font-medium">30d spend:</span>
                   <span>{formatUsd(keyInfo?.spend30dUsd ?? null, { fractionDigits: 2 })}</span>
                 </p>
-                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
+                <p className="flex flex-row flex-wrap items-baseline gap-x-1.5 rounded-lg bg-white/90 px-3 py-2 shadow-sm sm:flex-col sm:gap-0.5 sm:gap-x-0">
                   <span className="font-medium">Difference:</span>
                   <span>{differenceLabel}</span>
                 </p>
@@ -348,7 +348,7 @@ export default function AlertDetailsPage() {
             </div>
           )}
 
-          <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+          <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <button
               type="button"
@@ -398,7 +398,7 @@ export default function AlertDetailsPage() {
           </div>
 
           {otherAlerts.length > 0 ? (
-            <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+            <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
               <h2 className="heading-section mb-3">Other Alerts</h2>
               <TableSwipeHint />
               <div className="scroll-x-touch">
@@ -448,7 +448,7 @@ export default function AlertDetailsPage() {
         <aside className="lg:col-span-4">
           <div className="space-y-4 lg:sticky lg:top-6">
             {appUser?.role === "admin" ? (
-              <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+              <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
                 <h2 className="heading-section mb-3">Internal Notes</h2>
                 <SimulatorCommentsPanel
                   userId={null}
@@ -460,7 +460,7 @@ export default function AlertDetailsPage() {
                 />
               </div>
             ) : null}
-            <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4">
+            <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
               <h2 className="heading-section mb-3">Analyst Notes</h2>
               <SimulatorCommentsPanel
                 userId={null}
