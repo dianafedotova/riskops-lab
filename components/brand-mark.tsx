@@ -19,7 +19,7 @@ export function BrandMark({
         <span className="block truncate text-xl font-black leading-none tracking-[-0.02em] text-slate-900 sm:text-2xl">
           RiskOps Lab<span className="text-[#E15747]">.</span>
         </span>
-        <span className="hidden truncate pt-1 text-[11px] font-medium text-slate-600 sm:block">
+        <span className="block max-w-full truncate pt-1 text-[11px] font-medium leading-tight text-slate-600 sm:text-xs">
           {subtitle}
         </span>
       </span>

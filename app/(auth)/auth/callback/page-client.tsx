@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -29,6 +30,15 @@ export function AuthCallbackClient({ code }: Props) {
       } = await supabase.auth.getUser();
       if (!user) {
         if (!cancelled) setMessage("Session is not ready. Please try sign in again.");
+        return;
+      }
+      const { row: profile } = await fetchAppUserRow(supabase, user);
+      if (profile?.is_active === false) {
+        await supabase.auth.signOut();
+        if (!cancelled) {
+          router.replace("/sign-in?reason=inactive");
+          router.refresh();
+        }
         return;
       }
       router.replace("/dashboard");

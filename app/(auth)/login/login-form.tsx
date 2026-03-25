@@ -19,6 +19,7 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "";
+  const inactiveReason = searchParams.get("reason") === "inactive";
   const oauthCode = searchParams.get("code");
   const authType = searchParams.get("type");
   const handledCodeRef = useRef(false);
@@ -71,6 +72,20 @@ export function LoginForm() {
         }
         return;
       }
+      const {
+        data: { user: oauthUser },
+      } = await supabase.auth.getUser();
+      if (oauthUser) {
+        const { row: oauthProfile } = await fetchAppUserRow(supabase, oauthUser);
+        if (oauthProfile?.is_active === false) {
+          await supabase.auth.signOut();
+          if (!cancelled) {
+            setMessage("This account has been deactivated.");
+            setOauthLoading(false);
+          }
+          return;
+        }
+      }
       const dest =
         nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
           ? nextPath
@@ -109,13 +124,21 @@ export function LoginForm() {
       setLoading(false);
       return;
     }
-    let { error: profileErr } = await fetchAppUserRow(supabase, user);
+    let { row: profileRow, error: profileErr } = await fetchAppUserRow(supabase, user);
     if (profileErr) {
       await new Promise((r) => setTimeout(r, 250));
-      profileErr = (await fetchAppUserRow(supabase, user)).error;
+      const second = await fetchAppUserRow(supabase, user);
+      profileErr = second.error;
+      profileRow = second.row;
     }
     if (profileErr) {
       setMessage("Signed in, but profile check failed. Please reload in a moment.");
+      setLoading(false);
+      return;
+    }
+    if (profileRow?.is_active === false) {
+      await supabase.auth.signOut();
+      setMessage("This account has been deactivated.");
       setLoading(false);
       return;
     }
@@ -166,6 +189,11 @@ export function LoginForm() {
 
   return (
     <section className="mx-auto max-w-md space-y-4 rounded-xl border border-slate-300 bg-white p-6 text-slate-900">
+      {inactiveReason ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          This account has been deactivated. You cannot sign in anymore.
+        </p>
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-lg font-semibold">Login</h1>
         <p className="pt-0.5 text-xs text-slate-600">

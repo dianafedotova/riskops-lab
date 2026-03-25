@@ -1,9 +1,9 @@
 "use client";
 
+import { UserAccountMenu } from "@/components/user-account-menu";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 const publicNavLinks = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
@@ -21,18 +21,10 @@ const privateNavLinks = [
 
 export function AppNav() {
   const pathname = usePathname() ?? "";
-  const router = useRouter();
   const { authUser, appUser, loading: authLoading } = useCurrentUser();
   const navLinks = (authUser ? privateNavLinks : publicNavLinks).filter(
     (link) => !(link.href === "/" && pathname === "/" && !authUser)
   );
-
-  const onLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.replace("/sign-in");
-    router.refresh();
-  };
 
   return (
     <nav
@@ -70,13 +62,7 @@ export function AppNav() {
         </Link>
       ) : null}
       {!authLoading && authUser ? (
-        <button
-          type="button"
-          onClick={onLogout}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 hover:text-slate-900 sm:min-h-0 sm:py-2"
-        >
-          Logout
-        </button>
+        <UserAccountMenu authUser={authUser} appUser={appUser} />
       ) : !authLoading ? (
         <>
           <Link

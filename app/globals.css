@@ -17,6 +17,9 @@
   --brand-600: #2d5f70;
   --brand-500: #3f7f91;
   --brand-ring: rgb(111 177 193 / 0.7);
+  /** Logo square dot — terracotta */
+  --brand-dot: #d1634d;
+  --brand-dot-hover: #b8543f;
 
   /* Elevation */
   --shadow-soft: 0 2px 8px rgb(0 0 0 / 0.06);

@@ -1,7 +1,8 @@
 import type { AppUserRow } from "@/lib/types";
 import type { PostgrestError, SupabaseClient, User } from "@supabase/supabase-js";
 
-const APP_USER_SELECT = "id, auth_user_id, role, email, created_at" as const;
+const APP_USER_SELECT =
+  "id, auth_user_id, role, email, created_at, full_name, first_name, last_name, country_code, country_name, avatar_url, provider, status, is_active, last_login_at, updated_at" as const;
 
 /** Exact case-insensitive match for PostgREST `ilike` without treating `_` / `%` as wildcards. */
 export function emailForIliteralEq(email: string): string {

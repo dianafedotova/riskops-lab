@@ -103,6 +103,17 @@ export type AppUserRow = {
   role: "admin" | "user";
   email: string | null;
   created_at: string;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  avatar_url: string | null;
+  provider: string | null;
+  status: string | null;
+  is_active: boolean | null;
+  last_login_at: string | null;
+  updated_at: string | null;
 };
 
 /** Training / simulation comments only */
