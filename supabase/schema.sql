@@ -1,43 +1,105 @@
 -- Run in Supabase: SQL Editor → New query → paste → Run.
--- Creates public.users / public.alerts, RLS read for anon, seed rows.
+-- Schema aligned with lib/types.ts and client queries (users, alerts, app_users, transactions, etc.).
+-- Safe to re-run: uses IF NOT EXISTS / idempotent policies where possible.
 
+-- ---------------------------------------------------------------------------
+-- public.users (simulated customers — column names match UserRow)
+-- ---------------------------------------------------------------------------
 create table if not exists public.users (
   id text primary key,
   email text not null,
-  country text,
+  country_code text,
   country_name text,
   tier text,
-  user_status text,
+  status text,
   risk_level text,
-  display_name text,
+  full_name text,
   registration_date date,
   phone text,
   nationality text,
-  address_line text,
-  dob date,
-  balance_usd numeric,
-  turnover_usd numeric,
-  is_high_tier boolean default false
+  date_of_birth date,
+  address_text text,
+  proof_of_identity text,
+  proof_of_address text,
+  source_of_funds_docs text,
+  current_balance_usd numeric,
+  total_turnover_usd numeric,
+  is_high_tier boolean default false,
+  occupation text,
+  employment_status text,
+  annual_income_min_usd numeric,
+  annual_income_max_usd numeric,
+  primary_source_of_funds text,
+  selfie_path text
 );
 
--- Add country_name for existing DBs; backfill from nationality
+-- Ensure every canonical column exists on older DBs
+alter table public.users add column if not exists country_code text;
 alter table public.users add column if not exists country_name text;
-update public.users set country_name = coalesce(country_name, nationality) where country_name is null;
+alter table public.users add column if not exists tier text;
+alter table public.users add column if not exists status text;
+alter table public.users add column if not exists risk_level text;
+alter table public.users add column if not exists full_name text;
+alter table public.users add column if not exists registration_date date;
+alter table public.users add column if not exists phone text;
+alter table public.users add column if not exists nationality text;
+alter table public.users add column if not exists date_of_birth date;
+alter table public.users add column if not exists address_text text;
+alter table public.users add column if not exists proof_of_identity text;
+alter table public.users add column if not exists proof_of_address text;
+alter table public.users add column if not exists source_of_funds_docs text;
+alter table public.users add column if not exists current_balance_usd numeric;
+alter table public.users add column if not exists total_turnover_usd numeric;
+alter table public.users add column if not exists is_high_tier boolean;
+alter table public.users add column if not exists occupation text;
+alter table public.users add column if not exists employment_status text;
+alter table public.users add column if not exists annual_income_min_usd numeric;
+alter table public.users add column if not exists annual_income_max_usd numeric;
+alter table public.users add column if not exists primary_source_of_funds text;
+alter table public.users add column if not exists selfie_path text;
 
+-- Legacy names from older schema.sql (kept for one-way backfill)
+alter table public.users add column if not exists country text;
+alter table public.users add column if not exists user_status text;
+alter table public.users add column if not exists display_name text;
+alter table public.users add column if not exists dob date;
+alter table public.users add column if not exists address_line text;
+alter table public.users add column if not exists balance_usd numeric;
+alter table public.users add column if not exists turnover_usd numeric;
+
+update public.users set country_code = coalesce(country_code, country) where country is not null;
+update public.users set country_name = coalesce(country_name, nationality) where country_name is null and nationality is not null;
+update public.users set status = coalesce(status, user_status) where user_status is not null;
+update public.users set full_name = coalesce(full_name, display_name) where display_name is not null;
+update public.users set date_of_birth = coalesce(date_of_birth, dob) where dob is not null;
+update public.users set address_text = coalesce(address_text, address_line) where address_line is not null;
+update public.users set current_balance_usd = coalesce(current_balance_usd, balance_usd) where balance_usd is not null;
+update public.users set total_turnover_usd = coalesce(total_turnover_usd, turnover_usd) where turnover_usd is not null;
+
+-- ---------------------------------------------------------------------------
+-- public.alerts
+-- ---------------------------------------------------------------------------
 create table if not exists public.alerts (
   id text primary key,
   internal_id uuid not null default gen_random_uuid(),
   user_id text references public.users (id) on delete cascade,
   type text,
+  alert_type text,
   severity text,
   status text,
   description text,
+  rule_code text,
+  rule_name text,
   created_at timestamptz not null default now()
 );
 
 alter table public.alerts add column if not exists internal_id uuid;
+alter table public.alerts add column if not exists alert_type text;
+alter table public.alerts add column if not exists rule_code text;
+alter table public.alerts add column if not exists rule_name text;
 update public.alerts set internal_id = coalesce(internal_id, gen_random_uuid()) where internal_id is null;
 alter table public.alerts alter column internal_id set default gen_random_uuid();
+update public.alerts set alert_type = coalesce(alert_type, type) where type is not null;
 
 alter table public.users enable row level security;
 alter table public.alerts enable row level security;
@@ -49,9 +111,11 @@ drop policy if exists "Allow public read alerts" on public.alerts;
 create policy "Allow public read alerts" on public.alerts for select using (true);
 
 insert into public.users (
-  id, email, country, country_name, tier, user_status, risk_level,
-  display_name, registration_date, phone, nationality, address_line, dob,
-  balance_usd, turnover_usd, is_high_tier
+  id, email, country_code, country_name, tier, status, risk_level,
+  full_name, registration_date, phone, nationality, date_of_birth, address_text,
+  proof_of_identity, proof_of_address, source_of_funds_docs,
+  current_balance_usd, total_turnover_usd, is_high_tier,
+  occupation, employment_status, annual_income_min_usd, annual_income_max_usd, primary_source_of_funds
 ) values
 (
   'u-1001',
@@ -65,11 +129,19 @@ insert into public.users (
   '2024-02-03',
   '🇸🇬 +65 8123 4455',
   'Singapore',
-  '12 Marina View, #18-07, Singapore 018961',
   '1992-09-18',
+  '12 Marina View, #18-07, Singapore 018961',
+  'Passport SG ••••9012 verified',
+  'Utility bill (Mar 2026)',
+  'Bank statements + employer letter on file',
   84250,
   1021300,
-  true
+  true,
+  'Product manager',
+  'Employed',
+  120000,
+  180000,
+  'Salary + investments'
 ),
 (
   'u-1002',
@@ -83,11 +155,19 @@ insert into public.users (
   '2023-11-12',
   '🇦🇪 +971 50 555 0192',
   'United Arab Emirates',
-  'Dubai Marina, Tower B, UAE',
   '1988-04-22',
+  'Dubai Marina, Tower B, UAE',
+  'Emirates ID ••••7781 verified',
+  'DEWA statement (Feb 2026)',
+  'Invoices + crypto exchange exports',
   12000,
   890000,
-  false
+  false,
+  'Consultant',
+  'Self-employed',
+  80000,
+  120000,
+  'Client fees + trading'
 ),
 (
   'u-1003',
@@ -101,63 +181,122 @@ insert into public.users (
   '2022-06-01',
   '🇩🇪 +49 170 8899021',
   'Germany',
-  'Berlin, DE',
   '1995-12-05',
+  'Berlin, DE',
+  'National ID ••••4410 pending review',
+  'Rental agreement (expired)',
+  null,
   500,
   45000,
-  false
+  false,
+  null,
+  null,
+  null,
+  null,
+  null
 )
-on conflict (id) do update set country_name = excluded.country_name;
+on conflict (id) do update set
+  email = excluded.email,
+  country_code = excluded.country_code,
+  country_name = excluded.country_name,
+  tier = excluded.tier,
+  status = excluded.status,
+  risk_level = excluded.risk_level,
+  full_name = excluded.full_name,
+  registration_date = excluded.registration_date,
+  phone = excluded.phone,
+  nationality = excluded.nationality,
+  date_of_birth = excluded.date_of_birth,
+  address_text = excluded.address_text,
+  proof_of_identity = excluded.proof_of_identity,
+  proof_of_address = excluded.proof_of_address,
+  source_of_funds_docs = excluded.source_of_funds_docs,
+  current_balance_usd = excluded.current_balance_usd,
+  total_turnover_usd = excluded.total_turnover_usd,
+  is_high_tier = excluded.is_high_tier,
+  occupation = excluded.occupation,
+  employment_status = excluded.employment_status,
+  annual_income_min_usd = excluded.annual_income_min_usd,
+  annual_income_max_usd = excluded.annual_income_max_usd,
+  primary_source_of_funds = excluded.primary_source_of_funds;
 
-insert into public.alerts (id, user_id, type, severity, status, description, created_at) values
+insert into public.alerts (
+  id, user_id, type, alert_type, severity, status, description, rule_code, rule_name, created_at
+) values
 (
   'a-5001',
   'u-1003',
   'Fraud',
+  'Fraud',
   'High',
   'Open',
   'Unusual transaction velocity detected over a short time window after recent credential reset.',
+  null,
+  null,
   '2026-03-20 11:42:00+00'
 ),
 (
   'a-5002',
   'u-1002',
   'AML',
+  'AML',
   'Critical',
   'Escalated',
   'Structuring pattern across linked accounts.',
+  'AML_001',
+  'Income vs outbound spend (30d)',
   '2026-03-20 10:18:00+00'
 ),
 (
   'a-5003',
   'u-1001',
   'Fraud',
+  'Fraud',
   'Medium',
   'Monitoring',
   'Velocity spike vs baseline; review in progress.',
+  null,
+  null,
   '2026-03-19 19:07:00+00'
 ),
 (
   'a-4920',
   'u-1001',
   'AML',
+  'AML',
   'Medium',
   'Monitoring',
   'Related case from shared device fingerprint.',
+  null,
+  null,
   '2026-03-18 14:22:00+00'
 ),
 (
   'a-5999',
   'u-1002',
   'Fraud',
+  'Fraud',
   'Low',
   'Open',
   'Dummy alert for UI validation and filter checks.',
+  null,
+  null,
   '2026-03-21 09:30:00+00'
 )
-on conflict (id) do nothing;
+on conflict (id) do update set
+  user_id = excluded.user_id,
+  type = excluded.type,
+  alert_type = coalesce(excluded.alert_type, excluded.type, alert_type),
+  severity = excluded.severity,
+  status = excluded.status,
+  description = excluded.description,
+  rule_code = coalesce(excluded.rule_code, rule_code),
+  rule_name = coalesce(excluded.rule_name, rule_name),
+  created_at = excluded.created_at;
 
--- user_financials: balance and turnover (separate table for aggregates)
+-- ---------------------------------------------------------------------------
+-- user_financials
+-- ---------------------------------------------------------------------------
 create table if not exists public.user_financials (
   user_id text primary key references public.users (id) on delete cascade,
   current_balance numeric,
@@ -166,7 +305,6 @@ create table if not exists public.user_financials (
 
 alter table public.user_financials enable row level security;
 drop policy if exists "Allow public read user_financials" on public.user_financials;
--- anon/authenticated must be explicit or the client may get zero rows while postgres in SQL Editor sees data
 create policy "Allow public read user_financials"
   on public.user_financials
   for select
@@ -179,7 +317,9 @@ insert into public.user_financials (user_id, current_balance, total_turnover) va
 ('u-1003', 500, 45000)
 on conflict (user_id) do update set current_balance = excluded.current_balance, total_turnover = excluded.total_turnover;
 
--- user_events: devices and activity
+-- ---------------------------------------------------------------------------
+-- user_events
+-- ---------------------------------------------------------------------------
 create table if not exists public.user_events (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references public.users (id) on delete cascade,
@@ -207,7 +347,77 @@ insert into public.user_events (id, user_id, event_time, event_type, device_id, 
 ('a0000001-0000-4000-8000-000000000008', 'u-1003', '2026-03-18 10:00:00+00', 'Login', 'dev-mac-c3', '92.118.45.12', 'DE', 'MacBook Pro')
 on conflict (id) do nothing;
 
--- ops_events: operations log entries (event_time, action_type, performed_by)
+-- ---------------------------------------------------------------------------
+-- transactions (user profile + AML_001 spend window)
+-- ---------------------------------------------------------------------------
+create table if not exists public.transactions (
+  id text primary key,
+  user_id text references public.users (id) on delete cascade,
+  transaction_date date,
+  direction text,
+  type text,
+  channel text,
+  counterparty_name text,
+  status text,
+  amount numeric,
+  amount_usd numeric,
+  currency text default 'USD'
+);
+
+alter table public.transactions enable row level security;
+drop policy if exists "Allow public read transactions" on public.transactions;
+create policy "Allow public read transactions"
+  on public.transactions
+  for select
+  to anon, authenticated
+  using (true);
+
+insert into public.transactions (
+  id, user_id, transaction_date, direction, type, channel, counterparty_name, status, amount, amount_usd, currency
+) values
+('tx-u1001-1', 'u-1001', '2026-03-18', 'outbound', 'Transfer', 'SEPA', 'Acme Trading Ltd', 'Completed', 4200, 4200, 'USD'),
+('tx-u1001-2', 'u-1001', '2026-03-19', 'inbound', 'Deposit', 'Card', 'Payroll ACH', 'Completed', 5500, 5500, 'USD'),
+('tx-u1002-1', 'u-1002', '2026-03-01', 'outbound', 'Wire', 'SWIFT', 'Offshore Exchange', 'Completed', 25000, 25000, 'USD'),
+('tx-u1002-2', 'u-1002', '2026-03-10', 'outbound', 'Crypto', 'On-chain', 'Wallet 0x7a…c2', 'Completed', 15000, 15000, 'USD'),
+('tx-u1002-3', 'u-1002', '2026-03-15', 'outbound', 'Transfer', 'FPS', 'Property escrow', 'Pending', 8000, 8000, 'USD'),
+('tx-u1003-1', 'u-1003', '2026-03-12', 'outbound', 'Card', 'POS', 'Merchant 4921', 'Rejected', 1200, 1200, 'USD')
+on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- user_payment_methods
+-- ---------------------------------------------------------------------------
+create table if not exists public.user_payment_methods (
+  id uuid primary key default gen_random_uuid(),
+  user_id text references public.users (id) on delete cascade,
+  type text,
+  masked_number text,
+  card_network text,
+  status text,
+  bank_type text,
+  account_number text,
+  wallet_type text,
+  wallet_address text
+);
+
+alter table public.user_payment_methods enable row level security;
+drop policy if exists "Allow public read user_payment_methods" on public.user_payment_methods;
+create policy "Allow public read user_payment_methods"
+  on public.user_payment_methods
+  for select
+  to anon, authenticated
+  using (true);
+
+insert into public.user_payment_methods (id, user_id, type, masked_number, card_network, status, bank_type, account_number, wallet_type, wallet_address) values
+('e0000001-0000-4000-8000-000000000001', 'u-1001', 'Visa Debit', '•••• 4242', 'Visa', 'active', null, null, null, null),
+('e0000001-0000-4000-8000-000000000002', 'u-1001', 'Bank account', null, null, 'active', 'DBS', '••••9012', null, null),
+('e0000001-0000-4000-8000-000000000003', 'u-1002', 'Mastercard', '•••• 5599', 'Mastercard', 'active', null, null, null, null),
+('e0000001-0000-4000-8000-000000000004', 'u-1002', 'Crypto wallet', null, null, 'active', null, null, 'EVM', '0x71C…9Af3'),
+('e0000001-0000-4000-8000-000000000005', 'u-1003', 'Visa Credit', '•••• 1111', 'Visa', 'closed', null, null, null, null)
+on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- ops_events
+-- ---------------------------------------------------------------------------
 create table if not exists public.ops_events (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references public.users (id) on delete cascade,
@@ -228,7 +438,9 @@ insert into public.ops_events (id, user_id, event_time, action_type, performed_b
 ('b0000001-0000-4000-8000-000000000005', 'u-1001', '2026-03-02 10:30:00+00', 'poa_approved', 'analyst@riskopslab.com')
 on conflict (id) do nothing;
 
--- internal_notes: internal notes per user
+-- ---------------------------------------------------------------------------
+-- internal_notes (note_text for app; text kept for compatibility)
+-- ---------------------------------------------------------------------------
 create table if not exists public.internal_notes (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references public.users (id) on delete cascade,
@@ -238,20 +450,27 @@ create table if not exists public.internal_notes (
   created_by text
 );
 
+alter table public.internal_notes add column if not exists note_text text;
+update public.internal_notes set note_text = coalesce(note_text, text) where note_text is null;
+
 alter table public.internal_notes enable row level security;
 drop policy if exists "Allow public read internal_notes" on public.internal_notes;
 create policy "Allow public read internal_notes" on public.internal_notes for select using (true);
 drop policy if exists "Allow public insert internal_notes" on public.internal_notes;
 create policy "Allow public insert internal_notes" on public.internal_notes for insert with check (true);
 
-insert into public.internal_notes (id, user_id, text, note_type, created_at) values
-('c0000001-0000-4000-8000-000000000001', 'u-1001', 'EDD review requested due to increased monthly turnover.', 'system', '2026-03-18 10:00:00+00'),
-('c0000001-0000-4000-8000-000000000002', 'u-1001', 'Verified proof of address (utility bill, issued < 90 days).', 'system', '2026-03-18 11:00:00+00'),
-('c0000001-0000-4000-8000-000000000003', 'u-1001', 'SOF docs reviewed and accepted. No further action.', 'analyst', '2026-03-19 14:00:00+00'),
-('c0000001-0000-4000-8000-000000000004', 'u-1001', 'Case escalated to compliance for final sign-off.', 'admin', '2026-03-20 09:00:00+00')
+insert into public.internal_notes (id, user_id, text, note_text, note_type, created_at) values
+('c0000001-0000-4000-8000-000000000001', 'u-1001', 'EDD review requested due to increased monthly turnover.', 'EDD review requested due to increased monthly turnover.', 'system', '2026-03-18 10:00:00+00'),
+('c0000001-0000-4000-8000-000000000002', 'u-1001', 'Verified proof of address (utility bill, issued < 90 days).', 'Verified proof of address (utility bill, issued < 90 days).', 'system', '2026-03-18 11:00:00+00'),
+('c0000001-0000-4000-8000-000000000003', 'u-1001', 'SOF docs reviewed and accepted. No further action.', 'SOF docs reviewed and accepted. No further action.', 'analyst', '2026-03-19 14:00:00+00'),
+('c0000001-0000-4000-8000-000000000004', 'u-1001', 'Case escalated to compliance for final sign-off.', 'Case escalated to compliance for final sign-off.', 'admin', '2026-03-20 09:00:00+00')
 on conflict (id) do nothing;
 
--- alerts_note: notes per alert (predefined + analyst)
+update public.internal_notes set note_text = coalesce(note_text, text);
+
+-- ---------------------------------------------------------------------------
+-- alerts_note
+-- ---------------------------------------------------------------------------
 create table if not exists public.alerts_note (
   id uuid primary key default gen_random_uuid(),
   alert_id text not null references public.alerts (id) on delete cascade,
@@ -271,23 +490,48 @@ insert into public.alerts_note (id, alert_id, note_text, created_at, created_by)
 ('d0000001-0000-4000-8000-000000000002', 'a-5001', 'Requesting SOF docs from user.', '2026-03-20 12:00:00+00', 'analyst@riskopslab.com')
 on conflict (id) do nothing;
 
--- Read alias for alert predefined notes (same rows as alerts_note; do not insert via app)
 create or replace view public.alert_notes as
   select id, alert_id, note_text, created_at, created_by
   from public.alerts_note;
 
 grant select on public.alert_notes to anon, authenticated;
 
--- Real platform users (linked to auth.users)
+-- ---------------------------------------------------------------------------
+-- app_users (platform operators — matches AppUserRow + fetch-app-user select)
+-- ---------------------------------------------------------------------------
 create table if not exists public.app_users (
   id uuid primary key default gen_random_uuid(),
   auth_user_id uuid not null unique references auth.users (id) on delete cascade,
   role text not null check (role in ('admin', 'user')),
   email text,
-  created_at timestamptz not null default now()
+  full_name text,
+  first_name text,
+  last_name text,
+  country_code text,
+  country_name text,
+  avatar_url text,
+  provider text,
+  status text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  last_login_at timestamptz,
+  updated_at timestamptz
 );
 
--- Match rows to the JWT user by auth.users id or by email (fixes mis-linked auth_user_id).
+alter table public.app_users add column if not exists full_name text;
+alter table public.app_users add column if not exists first_name text;
+alter table public.app_users add column if not exists last_name text;
+alter table public.app_users add column if not exists country_code text;
+alter table public.app_users add column if not exists country_name text;
+alter table public.app_users add column if not exists avatar_url text;
+alter table public.app_users add column if not exists provider text;
+alter table public.app_users add column if not exists status text;
+alter table public.app_users add column if not exists is_active boolean;
+alter table public.app_users add column if not exists last_login_at timestamptz;
+alter table public.app_users add column if not exists updated_at timestamptz;
+
+update public.app_users set is_active = true where is_active is null;
+
 create or replace function public.app_user_matches_jwt(p_auth_user_id uuid, p_email text)
 returns boolean
 language sql
@@ -310,7 +554,15 @@ drop policy if exists "app_users_select_own" on public.app_users;
 create policy "app_users_select_own" on public.app_users
   for select using (public.app_user_matches_jwt(auth_user_id, email));
 
--- Simulation / training comments only
+drop policy if exists "app_users_update_own" on public.app_users;
+create policy "app_users_update_own" on public.app_users
+  for update
+  using (public.app_user_matches_jwt(auth_user_id, email))
+  with check (public.app_user_matches_jwt(auth_user_id, email));
+
+-- ---------------------------------------------------------------------------
+-- simulator_comments
+-- ---------------------------------------------------------------------------
 create table if not exists public.simulator_comments (
   id uuid primary key default gen_random_uuid(),
   user_id text references public.users (id) on delete cascade,
@@ -382,10 +634,8 @@ create policy "sim_comments_insert_user" on public.simulator_comments
         and me.role = 'user'
     )
     and (
-      -- top-level user comment
       parent_comment_id is null
       or
-      -- user follow-up reply inside own thread
       exists (
         select 1
         from public.simulator_comments root
@@ -431,10 +681,64 @@ create policy "sim_comments_insert_admin_private" on public.simulator_comments
   );
 
 grant select on public.app_users to authenticated;
+grant update on public.app_users to authenticated;
 grant select, insert on public.simulator_comments to authenticated;
 
--- Link a Supabase Auth user to the app (run after user exists in auth.users):
--- insert into public.app_users (auth_user_id, role, email)
--- values ('<auth.users id uuid>', 'admin', 'admin@example.test');
--- insert into public.app_users (auth_user_id, role, email)
--- values ('<auth.users id uuid>', 'user', 'trainee@example.test');
+-- ---------------------------------------------------------------------------
+-- admin_private_notes (admin-only scratch threads; use-simulator-comments.ts)
+-- ---------------------------------------------------------------------------
+create table if not exists public.admin_private_notes (
+  id uuid primary key default gen_random_uuid(),
+  user_id text references public.users (id) on delete cascade,
+  alert_id uuid references public.alerts (internal_id) on delete cascade,
+  author_app_user_id uuid not null references public.app_users (id) on delete cascade,
+  author_role text not null check (author_role = 'admin'),
+  parent_note_id uuid references public.admin_private_notes (id) on delete set null,
+  body text not null,
+  is_edited boolean not null default false,
+  is_deleted boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz,
+  constraint admin_private_notes_target_check check (
+    (user_id is not null and alert_id is null) or
+    (user_id is null and alert_id is not null)
+  )
+);
+
+create index if not exists admin_private_notes_user_idx
+  on public.admin_private_notes (user_id, created_at desc);
+create index if not exists admin_private_notes_alert_idx
+  on public.admin_private_notes (alert_id, created_at desc);
+
+alter table public.admin_private_notes enable row level security;
+
+drop policy if exists "admin_private_notes_select_own" on public.admin_private_notes;
+create policy "admin_private_notes_select_own" on public.admin_private_notes
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'admin'
+        and me.id = author_app_user_id
+    )
+  );
+
+drop policy if exists "admin_private_notes_insert_own" on public.admin_private_notes;
+create policy "admin_private_notes_insert_own" on public.admin_private_notes
+  for insert to authenticated
+  with check (
+    author_role = 'admin'
+    and exists (
+      select 1 from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'admin'
+        and me.id = author_app_user_id
+    )
+  );
+
+grant select, insert on public.admin_private_notes to authenticated;
+
+-- Link Supabase Auth users after they exist in auth.users:
+-- insert into public.app_users (auth_user_id, role, email, full_name, is_active)
+-- values ('<auth.users uuid>', 'admin', 'admin@example.test', 'Admin User', true);

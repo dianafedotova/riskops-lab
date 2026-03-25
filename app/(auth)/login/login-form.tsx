@@ -22,6 +22,8 @@ export function LoginForm() {
   const inactiveReason = searchParams.get("reason") === "inactive";
   const oauthCode = searchParams.get("code");
   const authType = searchParams.get("type");
+  const oauthFlag = searchParams.get("oauth");
+  const oauthErrMessage = searchParams.get("message");
   const handledCodeRef = useRef(false);
 
   const [email, setEmail] = useState("");
@@ -31,6 +33,33 @@ export function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
   const [showConfirmEmailWindow, setShowConfirmEmailWindow] = useState(false);
+
+  useEffect(() => {
+    if (!oauthFlag) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("oauth");
+    params.delete("message");
+    router.replace(`/sign-in${params.toString() ? `?${params.toString()}` : ""}`);
+
+    if (oauthFlag === "pkce") {
+      setMessage(
+        "Google sign-in could not complete (session cookie mismatch). Try again in this same browser window, or clear site data for this site and retry. If you use a password manager or privacy mode, allow cookies for this origin."
+      );
+      return;
+    }
+    if (oauthFlag === "error" && oauthErrMessage) {
+      setMessage(toFriendlyAuthError(oauthErrMessage));
+      return;
+    }
+    if (oauthFlag === "config") {
+      setMessage("Sign-in is not configured (missing Supabase environment variables on the server).");
+      return;
+    }
+    if (oauthFlag === "no_session" || oauthFlag === "missing_code") {
+      setMessage("Sign-in did not finish. Please try “Continue with Google” again.");
+      return;
+    }
+  }, [oauthFlag, oauthErrMessage, router, searchParams]);
 
   useEffect(() => {
     if (!oauthCode || handledCodeRef.current) return;
