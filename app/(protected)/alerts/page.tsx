@@ -4,15 +4,18 @@ import { QueryErrorBanner } from "@/components/query-error";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { formatDate } from "@/lib/format";
+import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { TABLE_PY } from "@/lib/table-padding";
 import { createClient } from "@/lib/supabase";
 import type { AlertRow } from "@/lib/types";
 import { useRouter } from "next/navigation";
-
-type AlertWithRuleName = AlertRow & { rule_name?: string | null };
 import { useEffect, useMemo, useState } from "react";
 
+type AlertWithRuleName = AlertRow & { rule_name?: string | null };
+
 export default function AlertsPage() {
+  const { appUser } = useCurrentUser();
+  const isAdmin = appUser?.role === "admin";
   const supabase = createClient();
   const router = useRouter();
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
@@ -143,12 +146,14 @@ export default function AlertsPage() {
       <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="heading-page">Alerts</h1>
-        <button
-          type="button"
-          className="min-h-11 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 sm:min-h-0 sm:px-3 sm:py-1.5"
-        >
-          Create Alert
-        </button>
+        {isAdmin ? (
+          <button
+            type="button"
+            className="min-h-11 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 sm:min-h-0 sm:px-3 sm:py-1.5"
+          >
+            Create Alert
+          </button>
+        ) : null}
       </div>
 
       {error && (

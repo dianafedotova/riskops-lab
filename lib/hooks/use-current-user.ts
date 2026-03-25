@@ -4,52 +4,59 @@ import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { createClient } from "@/lib/supabase";
 import type { AppUserRow } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-export function useCurrentUser() {
-  const [authUser, setAuthUser] = useState<User | null>(null);
-  const [appUser, setAppUser] = useState<AppUserRow | null>(null);
-  const [loading, setLoading] = useState(true);
+export type CurrentUserInitialSession = {
+  authUser: User | null;
+  appUser: AppUserRow | null;
+};
+
+export function useCurrentUser(initialSession?: CurrentUserInitialSession) {
+  const hadServerSession = useRef(initialSession !== undefined);
+  const [authUser, setAuthUser] = useState<User | null>(() => initialSession?.authUser ?? null);
+  const [appUser, setAppUser] = useState<AppUserRow | null>(() => initialSession?.appUser ?? null);
+  const [loading, setLoading] = useState(() => initialSession === undefined);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (showLoading: boolean) => {
     const supabase = createClient();
     setError(null);
-    setLoading(true);
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-    if (authErr) {
-      setError(authErr.message);
-      setAuthUser(null);
-      setAppUser(null);
-      setLoading(false);
-      return;
+    if (showLoading) setLoading(true);
+    try {
+      const {
+        data: { user },
+        error: authErr,
+      } = await supabase.auth.getUser();
+      if (authErr) {
+        setError(authErr.message);
+        setAuthUser(null);
+        setAppUser(null);
+        return;
+      }
+      setAuthUser(user);
+      if (!user) {
+        setAppUser(null);
+        return;
+      }
+      const { row, error: appErr } = await fetchAppUserRow(supabase, user);
+      if (appErr) {
+        setError(appErr.message);
+        setAppUser(null);
+      } else {
+        setAppUser(row);
+      }
+    } finally {
+      if (showLoading) setLoading(false);
     }
-    setAuthUser(user);
-    if (!user) {
-      setAppUser(null);
-      setLoading(false);
-      return;
-    }
-    const { row, error: appErr } = await fetchAppUserRow(supabase, user);
-    if (appErr) {
-      setError(appErr.message);
-      setAppUser(null);
-    } else {
-      setAppUser(row);
-    }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
-    void refresh();
+    void refresh(!hadServerSession.current);
     const supabase = createClient();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      void refresh();
+      void refresh(false);
     });
     return () => subscription.unsubscribe();
   }, [refresh]);

@@ -3,6 +3,7 @@
 import { QueryErrorBanner } from "@/components/query-error";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
+import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { TABLE_PY } from "@/lib/table-padding";
 import { createClient } from "@/lib/supabase";
 import type { UserRow } from "@/lib/types";
@@ -10,6 +11,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 export default function UsersPage() {
+  const { appUser } = useCurrentUser();
+  const isAdmin = appUser?.role === "admin";
   const supabase = createClient();
   const router = useRouter();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -169,14 +172,16 @@ export default function UsersPage() {
   return (
     <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
       <div className="mx-auto w-full max-w-5xl space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-4">
-        <button
-          type="button"
-          className="min-h-11 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 sm:min-h-0 sm:px-3 sm:py-1.5"
-        >
-          Add User
-        </button>
-      </div>
+      {isAdmin ? (
+        <div className="flex flex-wrap items-center justify-end gap-4">
+          <button
+            type="button"
+            className="min-h-11 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 sm:min-h-0 sm:px-3 sm:py-1.5"
+          >
+            Add User
+          </button>
+        </div>
+      ) : null}
 
       {error && (
         <QueryErrorBanner message={error} onRetry={() => setReloadTick((n) => n + 1)} hint={hint} />
