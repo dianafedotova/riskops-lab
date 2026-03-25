@@ -48,7 +48,7 @@ export function useSimulatorComments({
     setLoading(true);
     setError(null);
 
-    const applyTarget = (query: any) => {
+    const applyTarget = <Q extends { eq: (column: string, value: string | null) => Q }>(query: Q): Q => {
       let next = query;
       if (userId) next = next.eq("user_id", userId);
       if (alertId) next = next.eq("alert_id", alertId);

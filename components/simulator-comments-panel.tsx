@@ -5,7 +5,7 @@ import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { useSimulatorComments } from "@/lib/hooks/use-simulator-comments";
 import { createClient } from "@/lib/supabase";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Props = {
   userId?: string | null;
@@ -61,42 +61,6 @@ export function SimulatorCommentsPanel({
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-
-  if (!userId && !alertId) return null;
-
-  const onAddTrainee = async () => {
-    if (!body.trim() || !appUser?.id) return;
-    setActionError(null);
-    try {
-      if (appUser.role === "admin") {
-        if (adminMode === "private") {
-          await addAdminPrivateComment(body, appUser.id);
-        } else {
-          if (!activeAdminThreadRootId) {
-            throw new Error("Open a thread from Admin panel to add an admin reply.");
-          }
-          await addAdminQaReply(body, activeAdminThreadRootId, appUser.id);
-        }
-      } else {
-        await addUserComment(body, appUser.id);
-      }
-      setBody("");
-    } catch (e) {
-      setActionError(getErrorMessage(e, "Failed to add comment"));
-    }
-  };
-
-  const onSendQa = async (parentId: string) => {
-    if (!replyBody.trim() || !appUser?.id) return;
-    setActionError(null);
-    try {
-      await addAdminQaReply(replyBody, parentId, appUser.id);
-      setReplyBody("");
-      setReplyTo(null);
-    } catch (e) {
-      setActionError(getErrorMessage(e, "Failed to send QA reply"));
-    }
-  };
 
   const predefinedItems = useMemo(() => {
     return predefinedNotes
@@ -202,6 +166,53 @@ export function SimulatorCommentsPanel({
       cancelled = true;
     };
   }, [comments]);
+
+  const onAddTrainee = useCallback(async () => {
+    if (!body.trim() || !appUser?.id) return;
+    setActionError(null);
+    try {
+      if (appUser.role === "admin") {
+        if (adminMode === "private") {
+          await addAdminPrivateComment(body, appUser.id);
+        } else {
+          if (!activeAdminThreadRootId) {
+            throw new Error("Open a thread from Admin panel to add an admin reply.");
+          }
+          await addAdminQaReply(body, activeAdminThreadRootId, appUser.id);
+        }
+      } else {
+        await addUserComment(body, appUser.id);
+      }
+      setBody("");
+    } catch (e) {
+      setActionError(getErrorMessage(e, "Failed to add comment"));
+    }
+  }, [
+    activeAdminThreadRootId,
+    addAdminPrivateComment,
+    addAdminQaReply,
+    addUserComment,
+    adminMode,
+    appUser,
+    body,
+  ]);
+
+  const onSendQa = useCallback(
+    async (parentId: string) => {
+      if (!replyBody.trim() || !appUser?.id) return;
+      setActionError(null);
+      try {
+        await addAdminQaReply(replyBody, parentId, appUser.id);
+        setReplyBody("");
+        setReplyTo(null);
+      } catch (e) {
+        setActionError(getErrorMessage(e, "Failed to send QA reply"));
+      }
+    },
+    [addAdminQaReply, appUser, replyBody]
+  );
+
+  if (!userId && !alertId) return null;
 
   return (
     <div className={`${withTopBorder ? "mt-6 border-t border-slate-200 pt-4" : "mt-3"} space-y-3`}>
