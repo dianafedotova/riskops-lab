@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { getSiteOrigin } from "@/lib/site-url";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -14,7 +15,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const metadataBase = (() => {
+  try {
+    return new URL(getSiteOrigin());
+  } catch {
+    return new URL("https://riskopslab.com");
+  }
+})();
+
 export const metadata: Metadata = {
+  metadataBase,
   title: "RiskOps Lab",
   description: "Fraud and AML risk review simulator",
 };
