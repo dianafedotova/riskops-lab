@@ -74,8 +74,21 @@ export async function proxy(request: NextRequest) {
     }
 
     if (path === "/login" || path === "/sign-in" || path === "/signup") {
-      const { row: authAppUser } = await fetchAppUserRow(supabase, user);
-      if (authAppUser?.is_active === false) {
+      const { row: authAppUser, error: authFetchErr } = await fetchAppUserRow(supabase, user);
+      if (authFetchErr) {
+        return supabaseResponse;
+      }
+      if (!authAppUser) {
+        if (path === "/signup") {
+          return supabaseResponse;
+        }
+        const signupUrl = new URL("/signup", request.url);
+        signupUrl.searchParams.set("need_app_user", "1");
+        const redirectRes = NextResponse.redirect(signupUrl);
+        applyCookies(supabaseResponse, redirectRes);
+        return redirectRes;
+      }
+      if (authAppUser.is_active === false) {
         await supabase.auth.signOut();
         const inactiveUrl = new URL("/sign-in", request.url);
         inactiveUrl.searchParams.set("reason", "inactive");
@@ -105,9 +118,28 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const { row: appUser } = await fetchAppUserRow(supabase, user);
+  const { row: appUser, error: protectedFetchErr } = await fetchAppUserRow(supabase, user);
 
-  if (appUser?.is_active === false) {
+  if (protectedFetchErr) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/sign-in";
+    url.searchParams.set("next", path);
+    url.searchParams.set("oauth", "error");
+    url.searchParams.set("message", protectedFetchErr.message.slice(0, 200));
+    const redirectRes = NextResponse.redirect(url);
+    applyCookies(supabaseResponse, redirectRes);
+    return redirectRes;
+  }
+
+  if (!appUser) {
+    const signupUrl = new URL("/signup", request.url);
+    signupUrl.searchParams.set("need_app_user", "1");
+    const redirectRes = NextResponse.redirect(signupUrl);
+    applyCookies(supabaseResponse, redirectRes);
+    return redirectRes;
+  }
+
+  if (appUser.is_active === false) {
     await supabase.auth.signOut();
     const inactiveUrl = new URL("/sign-in", request.url);
     inactiveUrl.searchParams.set("reason", "inactive");

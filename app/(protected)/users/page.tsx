@@ -10,12 +10,21 @@ import type { UserRow } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+const USER_LIST_LIMIT = 2000;
+const USER_LIST_COLS =
+  "id, email, full_name, country_name, tier, status, risk_level" as const;
+
+type UserListRow = Pick<
+  UserRow,
+  "id" | "email" | "full_name" | "country_name" | "tier" | "status" | "risk_level"
+>;
+
 export default function UsersPage() {
   const { appUser } = useCurrentUser();
   const isAdmin = appUser?.role === "admin";
   const supabase = createClient();
   const router = useRouter();
-  const [users, setUsers] = useState<UserRow[]>([]);
+  const [users, setUsers] = useState<UserListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
@@ -35,14 +44,15 @@ export default function UsersPage() {
       setError(null);
       const { data, error: qError } = await supabase
         .from("users")
-        .select("*")
-        .order("id", { ascending: true });
+        .select(USER_LIST_COLS)
+        .order("id", { ascending: true })
+        .limit(USER_LIST_LIMIT);
       if (cancelled) return;
       if (qError) {
         setError(qError.message);
         setUsers([]);
       } else {
-        setUsers((data as UserRow[]) ?? []);
+        setUsers((data as UserListRow[]) ?? []);
       }
       setLoading(false);
     })();
@@ -127,10 +137,20 @@ export default function UsersPage() {
   }, [currentPage, filteredUsers, itemsPerPage]);
 
   const hint = (
-    <p className="text-xs text-rose-800/90">
-      Ensure <code className="rounded bg-rose-100 px-1 font-mono">supabase/schema.sql</code> has been applied in
-      Supabase.
-    </p>
+    <div className="space-y-1 text-xs text-rose-800/90">
+      {error && /timeout/i.test(error) ? (
+        <p>
+          Query timed out (often a very large <code className="rounded bg-rose-100 px-1 font-mono">users</code> table).
+          This page loads at most {USER_LIST_LIMIT} rows. Consider an index on{" "}
+          <code className="rounded bg-rose-100 px-1 font-mono">users(id)</code> (usually automatic for PK) and avoid
+          importing huge datasets into the simulator.
+        </p>
+      ) : null}
+      <p>
+        Ensure <code className="rounded bg-rose-100 px-1 font-mono">supabase/schema.sql</code> is applied and env keys
+        match your Supabase project.
+      </p>
+    </div>
   );
 
   const tierOptions = useMemo(() => {

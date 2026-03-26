@@ -3,18 +3,29 @@
 import { formatDateTime } from "@/lib/format";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { createClient } from "@/lib/supabase";
-import type { SimulatorCommentRow, UserRow } from "@/lib/types";
+import type { UserRow } from "@/lib/types";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-type TargetKind = "alert" | "user_profile";
+const THREAD_COLS = "id, app_user_id, alert_id, user_id, context_type, created_at" as const;
 
-type CommentThread = {
-  root: SimulatorCommentRow;
-  replies: SimulatorCommentRow[];
-  targetKind: TargetKind;
+type ReviewThreadListRow = {
+  id: string;
+  app_user_id: string;
+  alert_id: string | null;
+  user_id: string | null;
+  context_type: string | null;
+  created_at: string;
+};
+
+type ThreadListItem = {
+  threadId: string;
+  traineeLabel: string;
   targetLabel: string;
   targetHref: string;
+  qaParentId: string | null;
+  preview: string;
+  created_at: string;
 };
 
 type AdminAlertRow = {
@@ -28,7 +39,7 @@ type AdminAlertRow = {
 
 export default function AdminHomePage() {
   const { appUser, loading: userLoading } = useCurrentUser();
-  const [threads, setThreads] = useState<CommentThread[]>([]);
+  const [threads, setThreads] = useState<ThreadListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -38,7 +49,7 @@ export default function AdminHomePage() {
 
   const isAdmin = appUser?.role === "admin";
 
-  const refreshThreads = async () => {
+  const refreshThreads = useCallback(async () => {
     if (!isAdmin) {
       setThreads([]);
       setLoading(false);
@@ -49,48 +60,72 @@ export default function AdminHomePage() {
     setLoading(true);
     setError(null);
 
-    const { data: rawComments, error: commentsErr } = await supabase
-      .from("simulator_comments")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data: threadRows, error: threadsErr } = await supabase
+      .from("review_threads")
+      .select(THREAD_COLS)
+      .order("created_at", { ascending: false })
+      .limit(100);
 
-    if (commentsErr) {
-      setError(commentsErr.message);
+    if (threadsErr) {
+      setError(threadsErr.message);
       setThreads([]);
       setLoading(false);
       return;
     }
 
-    const comments = (rawComments as SimulatorCommentRow[]) ?? [];
-    const userRoots = comments.filter((c) => c.comment_type === "user_comment" && c.parent_comment_id == null);
+    const rows = (threadRows as ReviewThreadListRow[]) ?? [];
+    if (rows.length === 0) {
+      setThreads([]);
+      setLoading(false);
+      return;
+    }
 
-    const userIds = Array.from(new Set(userRoots.map((c) => c.user_id).filter(Boolean))) as string[];
-    const alertInternalIds = Array.from(new Set(userRoots.map((c) => c.alert_id).filter(Boolean))) as string[];
+    const threadIds = rows.map((r) => r.id);
+    const traineeIds = Array.from(new Set(rows.map((r) => r.app_user_id)));
+    const alertIds = Array.from(new Set(rows.map((r) => r.alert_id).filter(Boolean))) as string[];
+    const simUserIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean))) as string[];
 
-    const [usersRes, alertsResPrimary] = await Promise.all([
-      userIds.length
-        ? supabase.from("users").select("id, full_name, email").in("id", userIds)
+    const [traineesRes, usersRes, alertsResPrimary, rootsRes, decsRes] = await Promise.all([
+      supabase.from("app_users").select("id, email, full_name").in("id", traineeIds),
+      simUserIds.length
+        ? supabase.from("users").select("id, full_name, email").in("id", simUserIds)
         : Promise.resolve({ data: [], error: null }),
-      alertInternalIds.length
-        ? supabase
-            .from("alerts")
-            .select("id, internal_id, alert_type, severity, user_id")
-            .in("internal_id", alertInternalIds)
+      alertIds.length
+        ? supabase.from("alerts").select("id, internal_id, alert_type, severity, user_id").in("id", alertIds)
         : Promise.resolve({ data: [], error: null }),
+      supabase
+        .from("simulator_comments")
+        .select("id, thread_id, body, created_at, comment_type, parent_comment_id")
+        .in("thread_id", threadIds)
+        .is("parent_comment_id", null)
+        .eq("comment_type", "user_comment")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("trainee_decisions")
+        .select("thread_id, rationale, decision, created_at")
+        .in("thread_id", threadIds)
+        .order("created_at", { ascending: false }),
     ]);
 
+    if (traineesRes.error) {
+      setError(traineesRes.error.message);
+      setThreads([]);
+      setLoading(false);
+      return;
+    }
     if (usersRes.error) {
       setError(usersRes.error.message);
       setThreads([]);
       setLoading(false);
       return;
     }
+
     let alertsData: AdminAlertRow[] = [];
-    if (alertsResPrimary.error && alertInternalIds.length) {
+    if (alertsResPrimary.error && alertIds.length) {
       const alertsResFallback = await supabase
         .from("alerts")
-        .select("id, internal_id, type, severity, user_id")
-        .in("internal_id", alertInternalIds);
+        .select("id, internal_id, alert_type, severity, user_id")
+        .in("id", alertIds);
       if (alertsResFallback.error) {
         setError(alertsResFallback.error.message);
         setThreads([]);
@@ -102,6 +137,11 @@ export default function AdminHomePage() {
       alertsData = (alertsResPrimary.data as AdminAlertRow[]) ?? [];
     }
 
+    const traineesMap = new Map<string, { id: string; email: string | null; full_name: string | null }>();
+    for (const t of (traineesRes.data as { id: string; email: string | null; full_name: string | null }[]) ?? []) {
+      traineesMap.set(t.id, t);
+    }
+
     const usersMap = new Map<string, Pick<UserRow, "id" | "full_name" | "email">>();
     for (const u of (usersRes.data as Pick<UserRow, "id" | "full_name" | "email">[]) ?? []) {
       usersMap.set(u.id, u);
@@ -109,71 +149,91 @@ export default function AdminHomePage() {
 
     const alertsMap = new Map<string, AdminAlertRow>();
     for (const a of alertsData) {
-      if (a.internal_id) alertsMap.set(a.internal_id, a);
+      if (a.id) alertsMap.set(String(a.id), a);
     }
 
-    const repliesByParent = new Map<string, SimulatorCommentRow[]>();
-    for (const c of comments) {
-      if (c.comment_type !== "admin_qa" || !c.parent_comment_id) continue;
-      const list = repliesByParent.get(c.parent_comment_id) ?? [];
-      list.push(c);
-      repliesByParent.set(c.parent_comment_id, list);
+    const rootByThread = new Map<string, { id: string; body: string }>();
+    for (const c of (rootsRes.data as { id: string; thread_id: string | null; body: string }[]) ?? []) {
+      if (!c.thread_id) continue;
+      if (!rootByThread.has(c.thread_id)) {
+        rootByThread.set(c.thread_id, { id: c.id, body: c.body });
+      }
     }
 
-    const built = userRoots.map((root) => {
-      const replies = (repliesByParent.get(root.id) ?? []).sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
+    const latestDecPreview = new Map<string, string>();
+    for (const d of (decsRes.data as { thread_id: string; rationale: string | null; decision: string }[]) ?? []) {
+      if (!latestDecPreview.has(d.thread_id)) {
+        latestDecPreview.set(d.thread_id, (d.rationale ?? d.decision ?? "").trim());
+      }
+    }
 
-      if (root.alert_id) {
-        const alert = alertsMap.get(root.alert_id);
+    if (rootsRes.error || decsRes.error) {
+      setError(rootsRes.error?.message ?? decsRes.error?.message ?? "Failed to load thread activity");
+      setThreads([]);
+      setLoading(false);
+      return;
+    }
+
+    const built: ThreadListItem[] = rows.map((rt) => {
+      const trainee = traineesMap.get(rt.app_user_id);
+      const traineeLabel =
+        (trainee?.full_name ?? "").trim() || (trainee?.email ?? "").trim() || rt.app_user_id.slice(0, 8);
+
+      let targetLabel = "Review thread";
+      let targetHref = "/";
+      if (rt.context_type === "alert" && rt.alert_id) {
+        const alert = alertsMap.get(String(rt.alert_id));
         const alertPublicId = alert?.id ?? "unknown";
-        const type = (alert?.alert_type ?? alert?.type ?? "alert").toUpperCase();
+        const type = (alert?.alert_type ?? alert?.type ?? "alert").toString().toUpperCase();
         const severity = alert?.severity ? ` · ${alert.severity}` : "";
-        return {
-          root,
-          replies,
-          targetKind: "alert" as const,
-          targetLabel: `Alert ${alertPublicId} · ${type}${severity}`,
-          targetHref: `/alerts/${alertPublicId}`,
-        };
+        targetLabel = `Alert ${alertPublicId} · ${type}${severity}`;
+        targetHref = `/alerts/${alertPublicId}`;
+      } else if (rt.context_type === "profile" && rt.user_id) {
+        const su = usersMap.get(rt.user_id);
+        const uLabel = (su?.full_name ?? "").trim() || (su?.email ?? "").trim() || rt.user_id;
+        targetLabel = `User profile · ${uLabel}`;
+        targetHref = `/users/${rt.user_id}`;
       }
 
-      const profileUserId = root.user_id ?? "unknown";
-      const user = usersMap.get(profileUserId);
-      const userLabelBase = user?.full_name?.trim() || user?.email?.trim() || profileUserId;
+      const root = rootByThread.get(rt.id);
+      const decPrev = latestDecPreview.get(rt.id);
+      const preview = (root?.body ?? decPrev ?? "").trim() || "—";
+
       return {
-        root,
-        replies,
-        targetKind: "user_profile" as const,
-        targetLabel: `User profile · ${userLabelBase}`,
-        targetHref: `/users/${profileUserId}`,
+        threadId: rt.id,
+        traineeLabel,
+        targetLabel,
+        targetHref,
+        qaParentId: root?.id ?? null,
+        preview,
+        created_at: rt.created_at,
       };
     });
 
-    built.sort((a, b) => new Date(b.root.created_at).getTime() - new Date(a.root.created_at).getTime());
     setThreads(built);
     setLoading(false);
-  };
+  }, [isAdmin]);
 
   useEffect(() => {
     void refreshThreads();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [refreshThreads]);
 
-  const onSendReply = async (thread: CommentThread) => {
+  const onSendReply = async (thread: ThreadListItem) => {
     if (!appUser?.id || !replyBody.trim()) return;
+    if (!thread.qaParentId) {
+      setActionError("There is no trainee top-level comment to reply to yet. Open the case and wait for a user message.");
+      return;
+    }
     const supabase = createClient();
     setActionError(null);
     setActionOk(null);
 
     const { error: insErr } = await supabase.from("simulator_comments").insert({
-      user_id: thread.root.user_id,
-      alert_id: thread.root.alert_id,
+      thread_id: thread.threadId,
       author_app_user_id: appUser.id,
       author_role: "admin",
       comment_type: "admin_qa",
-      parent_comment_id: thread.root.id,
+      parent_comment_id: thread.qaParentId,
       body: replyBody.trim(),
     });
 
@@ -188,103 +248,111 @@ export default function AdminHomePage() {
     await refreshThreads();
   };
 
-  const emptyState = useMemo(
-    () => (
-      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
-        No user comments yet.
-      </div>
-    ),
-    []
-  );
+  const dashedPanelClass =
+    "rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500";
 
   if (userLoading) {
-    return <section className="space-y-3 text-slate-900"><p className="text-sm text-slate-600">Loading admin...</p></section>;
+    return (
+      <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
+        <div className="mx-auto w-full min-w-0 max-w-6xl">
+          <div className={dashedPanelClass}>Loading admin…</div>
+        </div>
+      </section>
+    );
   }
 
   if (!isAdmin) {
     return (
-      <section className="space-y-3 text-slate-900">
-        <h1 className="text-xl font-semibold">Admin</h1>
-        <p className="text-sm text-slate-600">Access restricted to admins only.</p>
+      <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
+        <div className="mx-auto w-full min-w-0 max-w-6xl space-y-3">
+          <h1 className="heading-page">Admin</h1>
+          <div className={dashedPanelClass}>Access restricted to admins only.</div>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="space-y-4 text-slate-900">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Admin</h1>
-          <p className="text-sm text-slate-600">User comment threads from simulator comments.</p>
+    <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
+      <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4">
+        <nav className="text-sm text-slate-500">
+          <Link href="/" className="hover:text-[#264B5A]">
+            Home
+          </Link>{" "}
+          / <span className="text-slate-700">Admin</span>
+        </nav>
+
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="heading-page">Admin</h1>
+            <p className="mt-1 text-sm text-slate-600">Trainee review threads — reply to QA from here.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refreshThreads()}
+            className="h-10 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50"
+          >
+            Refresh
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void refreshThreads()}
-          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-        >
-          Refresh
-        </button>
-      </div>
 
-      {actionError ? <p className="text-sm text-rose-600">{actionError}</p> : null}
-      {actionOk ? <p className="text-sm text-emerald-700">{actionOk}</p> : null}
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+        {actionError ? <p className="text-sm text-rose-600">{actionError}</p> : null}
+        {actionOk ? <p className="text-sm text-emerald-700">{actionOk}</p> : null}
+        {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
-      {loading ? (
-        <p className="text-sm text-slate-600">Loading comments...</p>
-      ) : threads.length === 0 ? (
-        emptyState
-      ) : (
-        <ul className="space-y-3">
+        <div className="rounded-xl border border-slate-200/90 bg-slate-50/70 p-4 shadow-sm">
+          {loading ? (
+            <div className={dashedPanelClass}>Loading review threads…</div>
+          ) : threads.length === 0 ? (
+            <div className={dashedPanelClass}>No review threads yet.</div>
+          ) : (
+            <ul className="space-y-3">
           {threads.map((thread) => (
-            <li key={thread.root.id} className="rounded-xl border border-slate-200 bg-white p-4">
+            <li
+              key={thread.threadId}
+              className="rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm"
+            >
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                <span>{thread.targetKind === "alert" ? "Alert comment" : "User profile comment"}</span>
-                <span className="tabular-nums">{formatDateTime(thread.root.created_at)}</span>
+                <span>Trainee · {thread.traineeLabel}</span>
+                <span className="tabular-nums">{formatDateTime(thread.created_at)}</span>
               </div>
 
               <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">{thread.targetLabel}</span>
-                <Link
-                  href={`${thread.targetHref}?thread=${thread.root.id}`}
-                  className="text-[#264B5A] underline"
-                >
-                  Open source page
+                <Link href={`${thread.targetHref}?thread=${thread.threadId}`} className="text-[#264B5A] underline">
+                  Open in review mode
                 </Link>
               </div>
 
               <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3">
-                <p className="mb-1 text-xs text-slate-500">User comment</p>
-                <p className="whitespace-pre-wrap text-sm text-slate-900">{thread.root.body}</p>
+                <p className="mb-1 text-xs text-slate-500">Latest trainee activity</p>
+                <p className="whitespace-pre-wrap text-sm text-slate-900">{thread.preview}</p>
               </div>
 
-              {thread.replies.map((reply) => (
-                <div key={reply.id} className="mt-2 ml-4 rounded-lg border border-violet-200 bg-violet-50/70 p-3">
-                  <div className="mb-1 flex justify-between gap-2 text-xs text-slate-500">
-                    <span>Admin reply</span>
-                    <span className="tabular-nums">{formatDateTime(reply.created_at)}</span>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm text-slate-900">{reply.body}</p>
-                </div>
-              ))}
+              {!thread.qaParentId ? (
+                <p className="mt-2 text-xs text-amber-800">
+                  QA reply is available after the trainee posts a top-level thread message on the case page.
+                </p>
+              ) : null}
 
               <div className="mt-3">
-                {replyTo === thread.root.id ? (
+                {replyTo === thread.threadId ? (
                   <div className="space-y-2">
                     <textarea
                       value={replyBody}
                       onChange={(e) => setReplyBody(e.target.value)}
                       rows={3}
                       className="w-full rounded border border-slate-300 px-3 py-2 text-sm text-slate-800"
-                      placeholder="Write admin reply..."
+                      placeholder="Write admin QA reply..."
                     />
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700"
+                        className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+                        disabled={!thread.qaParentId}
                         onClick={() => void onSendReply(thread)}
                       >
-                        Send reply
+                        Send QA
                       </button>
                       <button
                         type="button"
@@ -302,9 +370,10 @@ export default function AdminHomePage() {
                 ) : (
                   <button
                     type="button"
-                    className="text-sm text-[#264B5A] underline"
+                    className="text-sm text-[#264B5A] underline disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!thread.qaParentId}
                     onClick={() => {
-                      setReplyTo(thread.root.id);
+                      setReplyTo(thread.threadId);
                       setReplyBody("");
                       setActionError(null);
                     }}
@@ -315,8 +384,10 @@ export default function AdminHomePage() {
               </div>
             </li>
           ))}
-        </ul>
-      )}
+            </ul>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

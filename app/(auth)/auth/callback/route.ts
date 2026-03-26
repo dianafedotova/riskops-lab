@@ -1,12 +1,15 @@
 import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 
 /**
  * OAuth PKCE must be exchanged using the same cookie jar as the incoming request.
  * A client-only exchange can fail under React Strict Mode (double effect) or when
  * redirect origin does not match where the verifier cookie was set.
+ *
+ * Important: session cookies must be set on the same {@link NextResponse} that is
+ * returned. Using `cookies()` from `next/headers` + a fresh `NextResponse.redirect()`
+ * can drop Set-Cookie headers in the App Router, which surfaces as `oauth=no_session`.
  */
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.clone();
@@ -36,21 +39,20 @@ export async function GET(request: NextRequest) {
     return redirectSignIn({ oauth: "missing_code" });
   }
 
-  const cookieStore = await cookies();
+  const successUrl = request.nextUrl.clone();
+  successUrl.pathname = nextPath;
+  successUrl.search = "";
+  const response = NextResponse.redirect(successUrl);
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return request.cookies.getAll();
       },
       setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        } catch {
-          /* ignore when cookie store cannot be mutated */
-        }
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
+        });
       },
     },
   });
@@ -76,14 +78,48 @@ export async function GET(request: NextRequest) {
     return redirectSignIn({ oauth: "no_session" });
   }
 
-  const { row: profile } = await fetchAppUserRow(supabase, user);
-  if (profile?.is_active === false) {
+  const { row: appUserRow, error: appUserErr } = await fetchAppUserRow(supabase, user);
+
+  if (appUserErr) {
     await supabase.auth.signOut();
-    return redirectSignIn({ reason: "inactive" });
+    const signInUrl = request.nextUrl.clone();
+    signInUrl.pathname = "/sign-in";
+    signInUrl.search = "";
+    signInUrl.searchParams.set("oauth", "error");
+    signInUrl.searchParams.set("message", appUserErr.message.slice(0, 200));
+    const errRes = NextResponse.redirect(signInUrl);
+    for (const c of response.headers.getSetCookie()) {
+      errRes.headers.append("Set-Cookie", c);
+    }
+    return errRes;
   }
 
-  const ok = request.nextUrl.clone();
-  ok.pathname = nextPath;
-  ok.search = "";
-  return NextResponse.redirect(ok);
+  if (!appUserRow) {
+    await supabase.auth.signOut();
+    const signupUrl = request.nextUrl.clone();
+    signupUrl.pathname = "/signup";
+    signupUrl.search = "";
+    signupUrl.searchParams.set("need_app_user", "1");
+    const signupResponse = NextResponse.redirect(signupUrl);
+    for (const c of response.headers.getSetCookie()) {
+      signupResponse.headers.append("Set-Cookie", c);
+    }
+    return signupResponse;
+  }
+
+  if (appUserRow.is_active === false) {
+    await supabase.auth.signOut();
+    const inactiveUrl = request.nextUrl.clone();
+    inactiveUrl.pathname = "/sign-in";
+    inactiveUrl.search = "";
+    inactiveUrl.searchParams.set("reason", "inactive");
+    const inactiveResponse = NextResponse.redirect(inactiveUrl);
+    const forwarded = response.headers.getSetCookie();
+    for (const c of forwarded) {
+      inactiveResponse.headers.append("Set-Cookie", c);
+    }
+    return inactiveResponse;
+  }
+
+  return response;
 }

@@ -3,6 +3,9 @@
 import { ageFromIsoDate, formatDate, formatDateTime, formatEventType, formatMoneyUsd, formatTransactionAmount, maskIp } from "@/lib/format";
 import { getOpsEventLabel } from "@/lib/ops-events";
 import { SimulatorCommentsPanel } from "@/components/simulator-comments-panel";
+import { useTraineeDecisions } from "@/lib/hooks/use-trainee-decisions";
+import { ensureUserReviewThread } from "@/lib/review/ensure-thread";
+import { fetchReviewThreadIdForProfile } from "@/lib/review/fetch-review-thread-id";
 import { createClient } from "@/lib/supabase";
 import type { AlertRow, OpsEventRow, PaymentMethodRow, TransactionRow, UserEventRow, UserFinancialsRow, UserNoteRow, UserRow } from "@/lib/types";
 import Image from "next/image";
@@ -13,7 +16,12 @@ import { UserProfileSkeleton } from "@/components/user-profile-skeleton";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { TABLE_PY_INNER } from "@/lib/table-padding";
 import { normalizeFinancialsRow } from "@/lib/user-financials";
-import { useParams } from "next/navigation";
+import {
+  buildTraineeWatchlistInsertRow,
+  formatPostgrestError,
+  resolveTraineeWatchlistSimulatorColumn,
+} from "@/lib/trainee-user-watchlist";
+import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type TabKey =
@@ -25,6 +33,35 @@ type TabKey =
   | "opslog"
   | "alerts"
   | "notes";
+
+type TraineeDecisionChoice = "false_positive" | "true_positive" | "info_requested" | "escalated";
+
+function proposedStatusForUserDecision(decision: TraineeDecisionChoice): string {
+  if (decision === "false_positive") return "closed";
+  if (decision === "true_positive") return "escalated";
+  if (decision === "info_requested") return "open";
+  return "escalated";
+}
+
+function getTraineeDecisionLabel(decision: string | null | undefined): string {
+  const d = (decision ?? "").trim();
+  if (!d) return "Not set";
+  if (d === "false_positive") return "False Positive";
+  if (d === "true_positive") return "True Positive";
+  if (d === "info_requested") return "Info requested";
+  if (d === "escalated") return "Escalated";
+  return d;
+}
+
+function traineeDecisionBadgeClass(decision: string | null | undefined): string {
+  const d = (decision ?? "").trim();
+  if (!d) return "bg-slate-200 text-slate-600";
+  if (d === "false_positive") return "bg-emerald-100 text-emerald-700";
+  if (d === "true_positive") return "bg-rose-100 text-rose-700";
+  if (d === "info_requested") return "bg-slate-100 text-slate-600";
+  if (d === "escalated") return "bg-amber-100 text-amber-700";
+  return "bg-slate-200 text-slate-600";
+}
 
 type AccountStatus = "active" | "not_active" | "restricted" | "blocked" | "closed";
 
@@ -158,8 +195,117 @@ function PaymentMethodStatusBadge({ status }: { status: string | null }) {
   );
 }
 
+type SimulatorAccountActionButtonsProps = {
+  accountStatus: AccountStatus;
+  canOperate: boolean;
+  onReactivateAccount: () => void;
+  onUnblockAccount: () => void;
+  onApplyPartialBlock: () => void;
+  onApplyFullBlock: () => void;
+  onCloseAccount: () => void;
+  className?: string;
+};
+
+function SimulatorAccountActionButtons({
+  accountStatus,
+  canOperate,
+  onReactivateAccount,
+  onUnblockAccount,
+  onApplyPartialBlock,
+  onApplyFullBlock,
+  onCloseAccount,
+  className,
+}: SimulatorAccountActionButtonsProps) {
+  const wrap = className ?? "flex flex-wrap items-center gap-1.5";
+  return (
+    <div className={wrap}>
+      {accountStatus === "not_active" ? (
+        <span className="text-xs text-slate-500">KYC required</span>
+      ) : accountStatus === "closed" ? (
+        <button
+          type="button"
+          onClick={onReactivateAccount}
+          className="rounded-lg border border-emerald-300 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50/50"
+        >
+          Reactivate Account
+        </button>
+      ) : accountStatus === "restricted" ? (
+        <>
+          <button
+            type="button"
+            onClick={onUnblockAccount}
+            className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50/50"
+          >
+            Unblock
+          </button>
+          <button
+            type="button"
+            onClick={onApplyFullBlock}
+            className="rounded-lg border border-rose-300 px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50/50"
+          >
+            Full Block
+          </button>
+          <button
+            type="button"
+            onClick={onCloseAccount}
+            className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100/50"
+          >
+            Account Closure
+          </button>
+        </>
+      ) : accountStatus === "blocked" ? (
+        <>
+          <button
+            type="button"
+            onClick={onUnblockAccount}
+            className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50/50"
+          >
+            Unblock
+          </button>
+          <button
+            type="button"
+            onClick={onCloseAccount}
+            className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100/50"
+          >
+            Account Closure
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={onApplyPartialBlock}
+            disabled={!canOperate}
+            className="rounded-lg border border-amber-300 px-2 py-1 text-[11px] font-medium text-amber-700 enabled:hover:bg-amber-50/50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Partial Block
+          </button>
+          <button
+            type="button"
+            onClick={onApplyFullBlock}
+            disabled={!canOperate}
+            className="rounded-lg border border-rose-300 px-2 py-1 text-[11px] font-medium text-rose-600 enabled:hover:bg-rose-50/50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Full Block
+          </button>
+          <button
+            type="button"
+            onClick={onCloseAccount}
+            disabled={!canOperate}
+            className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 enabled:hover:bg-slate-100/50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Account Closure
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function UserProfilePage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const threadParam = searchParams.get("thread");
   const { appUser } = useCurrentUser();
   const params = useParams<{ id: string }>();
   const userId = params?.id ?? "";
@@ -184,6 +330,22 @@ export default function UserProfilePage() {
   const [reloadTick, setReloadTick] = useState(0);
   const [selfieLoadFailed, setSelfieLoadFailed] = useState(false);
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
+
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [threadCheckDone, setThreadCheckDone] = useState(false);
+  const [isWatching, setIsWatching] = useState(false);
+  const [watchBusy, setWatchBusy] = useState(false);
+  const [pendingDecision, setPendingDecision] = useState<TraineeDecisionChoice | null>(null);
+  const [rationale, setRationale] = useState("");
+  const [submitBusy, setSubmitBusy] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const [notesTabThreadId, setNotesTabThreadId] = useState<string | null>(null);
+  const [notesTabThreadError, setNotesTabThreadError] = useState<string | null>(null);
+  const [internalNotesLoadError, setInternalNotesLoadError] = useState<string | null>(null);
+
+  const reviewMode = Boolean(activeThreadId);
+  const { decisions, loading: decisionsLoading, submitDecision } = useTraineeDecisions(reviewMode ? activeThreadId : null);
 
   useEffect(() => {
     setSelfieLoadFailed(false);
@@ -219,6 +381,7 @@ export default function UserProfilePage() {
       setLoading(true);
       setError(null);
       setTxError(null);
+      setInternalNotesLoadError(null);
       const { data: row, error: qError } = await supabase
         .from("users")
         .select("*")
@@ -314,26 +477,65 @@ export default function UserProfilePage() {
       }
       if (!cancelled) setPaymentMethods(((pmRes.data as PaymentMethodRow[]) ?? []) as UiPaymentMethod[]);
       if (!cancelled) setOpsEvents((opsRes.data as OpsEventRow[]) ?? []);
-      // Support both DB variants:
-      // - internal_notes.note_text (current)
-      // - internal_notes.text (legacy seed)
+      // internal_notes: column `text` is a PostgREST reserved token — must be selected as "text".
+      type RawNote = {
+        id: string;
+        user_id: string;
+        note_text?: string | null;
+        text?: string | null;
+        created_at: string;
+        created_by: string | null;
+      };
+      const mapRawNotes = (rows: RawNote[]): UserNoteRow[] =>
+        rows.map((r) => {
+          const body = (r.note_text ?? r.text ?? "").trim();
+          return {
+            id: r.id,
+            user_id: r.user_id,
+            note_text: body.length ? body : "—",
+            created_at: r.created_at,
+            created_by: r.created_by,
+          };
+        });
       let notesData: UserNoteRow[] = [];
-      const notesPrimary = await supabase
-        .from("internal_notes")
-        .select("id, user_id, note_text, created_at, created_by")
-        .eq("user_id", canonicalUserId)
-        .order("created_at", { ascending: false });
-      if (notesPrimary.error) {
-        const notesFallback = await supabase
-          .from("internal_notes")
-          .select("id, user_id, note_text:text, created_at, created_by")
-          .eq("user_id", canonicalUserId)
-          .order("created_at", { ascending: false });
-        notesData = (notesFallback.data as UserNoteRow[]) ?? [];
-      } else {
-        notesData = (notesPrimary.data as UserNoteRow[]) ?? [];
+      let notesLoadErr: string | null = null;
+      const noteSelectAttempts = [
+        'id, user_id, note_text, "text", created_at, created_by',
+        "id, user_id, note_text, created_at, created_by",
+        'id, user_id, "text", created_at, created_by',
+        "*",
+      ] as const;
+      const userIdsForNotes = Array.from(
+        new Set(
+          [canonicalUserId, canonicalUserId.trim(), canonicalUserId.trim().toLowerCase()].filter(
+            (id) => id.length > 0
+          )
+        )
+      );
+      outerNotes: for (const uid of userIdsForNotes) {
+        for (const cols of noteSelectAttempts) {
+          const { data, error } = await supabase
+            .from("internal_notes")
+            .select(cols)
+            .eq("user_id", uid)
+            .order("created_at", { ascending: false });
+          if (error) {
+            notesLoadErr = error.message;
+            continue;
+          }
+          const mapped = mapRawNotes(((data ?? []) as unknown) as RawNote[]);
+          notesLoadErr = null;
+          if (mapped.length > 0) {
+            notesData = mapped;
+            break outerNotes;
+          }
+          break;
+        }
       }
-      if (!cancelled) setPredefinedNotes(notesData);
+      if (!cancelled) {
+        setPredefinedNotes(notesData);
+        setInternalNotesLoadError(notesLoadErr);
+      }
       if (!cancelled) {
         setTxError(txRes.error?.message ?? null);
         const tx = txRes.error ? [] : (txRes.data as TransactionRow[]) ?? [];
@@ -345,6 +547,107 @@ export default function UserProfilePage() {
       cancelled = true;
     };
   }, [userId, reloadTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!threadParam || !user?.id) {
+      setActiveThreadId(null);
+      setThreadCheckDone(true);
+      return;
+    }
+    if (!appUser) {
+      setThreadCheckDone(false);
+      return;
+    }
+    setThreadCheckDone(false);
+    (async () => {
+      const { data: th, error: thErr } = await supabase
+        .from("review_threads")
+        .select("id, app_user_id, user_id, context_type")
+        .eq("id", threadParam)
+        .maybeSingle();
+      if (cancelled) return;
+      if (thErr || !th) {
+        setActiveThreadId(null);
+        setThreadCheckDone(true);
+        return;
+      }
+      if (th.context_type !== "profile" || String(th.user_id) !== user.id) {
+        setActiveThreadId(null);
+        setThreadCheckDone(true);
+        return;
+      }
+      if (appUser.role === "user" && th.app_user_id !== appUser.id) {
+        setActiveThreadId(null);
+        setThreadCheckDone(true);
+        return;
+      }
+      setActiveThreadId(String(th.id));
+      setThreadCheckDone(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [threadParam, user?.id, appUser, supabase]);
+
+  /** Notes tab: resolve review_threads.id (thread-scoped simulator_comments). Trainees: own thread for this profile; admins: latest thread on profile. */
+  useEffect(() => {
+    if (activeTab !== "notes" || !user?.id || !appUser) {
+      return;
+    }
+    let cancelled = false;
+    setNotesTabThreadError(null);
+    if (appUser.role !== "admin" && appUser.role !== "user") {
+      setNotesTabThreadId(null);
+      return;
+    }
+    (async () => {
+      if (appUser.role === "user") {
+        const { threadId, error: thErr } = await ensureUserReviewThread(supabase, appUser.id, user.id);
+        if (cancelled) return;
+        if (thErr || !threadId) {
+          setNotesTabThreadId(null);
+          setNotesTabThreadError(thErr?.message ?? "Could not open a review thread for this profile.");
+          return;
+        }
+        setNotesTabThreadId(threadId);
+        return;
+      }
+      const { threadId, error: thErr } = await fetchReviewThreadIdForProfile(supabase, user.id, null);
+      if (cancelled) return;
+      if (thErr) {
+        setNotesTabThreadId(null);
+        setNotesTabThreadError(thErr.message);
+        return;
+      }
+      setNotesTabThreadId(threadId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, appUser, user?.id, supabase]);
+
+  useEffect(() => {
+    if (!appUser || appUser.role !== "user" || !user?.id) {
+      setIsWatching(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const simCol = await resolveTraineeWatchlistSimulatorColumn(supabase);
+      if (cancelled) return;
+      let q = supabase
+        .from("trainee_user_watchlist")
+        .select("id")
+        .eq("app_user_id", appUser.id);
+      q = q.eq(simCol, user.id);
+      const { data } = await q.maybeSingle();
+      if (!cancelled) setIsWatching(Boolean(data));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appUser, user?.id, supabase]);
 
   const copyUserId = async () => {
     await navigator.clipboard.writeText(user?.id ?? "");
@@ -372,6 +675,54 @@ export default function UserProfilePage() {
       document.removeEventListener("scroll", handleScroll, true);
     };
   }, [dropdownOpen, closeDropdown]);
+
+  const onToggleWatch = useCallback(async () => {
+    if (!appUser?.id || appUser.role !== "user" || !user?.id) return;
+    setWatchBusy(true);
+    setSubmitError(null);
+    try {
+      const simCol = await resolveTraineeWatchlistSimulatorColumn(supabase);
+      if (isWatching) {
+        let dq = supabase.from("trainee_user_watchlist").delete().eq("app_user_id", appUser.id);
+        dq = dq.eq(simCol, user.id);
+        const { error: delErr } = await dq;
+        if (delErr) throw delErr;
+        setIsWatching(false);
+      } else {
+        const row = buildTraineeWatchlistInsertRow(appUser.id, user.id, simCol);
+        const { error: insErr } = await supabase.from("trainee_user_watchlist").insert(row);
+        if (insErr && (insErr as { code?: string }).code !== "23505") throw insErr;
+        setIsWatching(true);
+      }
+    } catch (e) {
+      setSubmitError(formatPostgrestError(e));
+    } finally {
+      setWatchBusy(false);
+    }
+  }, [appUser?.id, appUser?.role, isWatching, supabase, user?.id]);
+
+  const onSubmitUserDecision = useCallback(async () => {
+    if (!appUser?.id || !pendingDecision || !activeThreadId || !user) return;
+    setSubmitBusy(true);
+    setSubmitError(null);
+    try {
+      await submitDecision({
+        appUserId: appUser.id,
+        alertId: null,
+        userId: user.id,
+        decision: pendingDecision,
+        proposedAlertStatus: proposedStatusForUserDecision(pendingDecision),
+        rationale: rationale.trim() || null,
+        reviewState: "submitted",
+      });
+      setRationale("");
+      setPendingDecision(null);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Submit failed");
+    } finally {
+      setSubmitBusy(false);
+    }
+  }, [activeThreadId, appUser?.id, pendingDecision, rationale, submitDecision, user]);
 
   if (loading) {
     return <UserProfileSkeleton />;
@@ -418,6 +769,7 @@ export default function UserProfilePage() {
   const displayName = user.full_name ?? user.email ?? "—";
   const age = ageFromIsoDate(user.date_of_birth);
   const countryLabel = user.country_name ?? "—";
+  const threadInvalid = Boolean(threadParam && threadCheckDone && !activeThreadId);
 
   const riskClass =
     riskLevel === "High"
@@ -610,7 +962,118 @@ export default function UserProfilePage() {
         / <span className="text-slate-700">{displayName}</span>
       </nav>
 
-      <div className="flex min-w-0 flex-row items-start gap-4 overflow-hidden rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 px-4 py-3 shadow-sm sm:items-center sm:overflow-visible sm:p-5">
+      {threadInvalid ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          This review link is invalid or you do not have access.{" "}
+          <Link href={`/users/${user.id}`} className="font-medium text-[#264B5A] underline">
+            View canonical profile
+          </Link>
+        </p>
+      ) : null}
+
+      {reviewMode ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+          <h2 className="heading-section mb-2">Review workspace</h2>
+          <p className="mb-3 text-xs text-slate-600">
+            Profile review notes and decisions are training-only and do not change simulator user records.
+          </p>
+          {decisionsLoading ? (
+            <p className="text-xs text-slate-500">Loading decisions…</p>
+          ) : decisions.length > 0 ? (
+            <ul className="mb-4 space-y-2 text-sm">
+              {decisions.map((d) => (
+                <li key={d.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="mb-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                    <span className="tabular-nums">{formatDateTime(d.created_at)}</span>
+                    {d.proposed_alert_status ? <span>Proposed: {d.proposed_alert_status}</span> : null}
+                  </div>
+                  <p className="mb-1">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${traineeDecisionBadgeClass(d.decision)}`}
+                    >
+                      {getTraineeDecisionLabel(d.decision)}
+                    </span>
+                  </p>
+                  {d.rationale ? <p className="whitespace-pre-wrap text-slate-700">{d.rationale}</p> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mb-4 text-xs text-slate-500">No decisions in this thread yet.</p>
+          )}
+
+          {appUser?.role === "user" ? (
+            <div className="space-y-3 border-t border-slate-200 pt-3">
+              <p className="text-xs font-medium text-slate-700">Submit a new decision (append-only)</p>
+              <textarea
+                value={rationale}
+                onChange={(e) => setRationale(e.target.value)}
+                rows={3}
+                placeholder="Rationale (optional)"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
+              />
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(
+                  [
+                    ["info_requested", "Info requested"],
+                    ["escalated", "Escalated"],
+                    ["false_positive", "False Positive"],
+                    ["true_positive", "True Positive"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setPendingDecision(key)}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      pendingDecision === key
+                        ? "border-slate-500 bg-slate-100 text-slate-900"
+                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50/80"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={!pendingDecision || submitBusy}
+                onClick={() => void onSubmitUserDecision()}
+                className="rounded-lg bg-[#264B5A] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {submitBusy ? "Submitting…" : "Submit decision"}
+              </button>
+              {submitError ? <p className="text-xs text-rose-600">{submitError}</p> : null}
+            </div>
+          ) : null}
+
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <SimulatorCommentsPanel
+              threadId={activeThreadId}
+              reviewMode
+              privateAlertInternalId={null}
+              privateSimulatorUserId={user.id}
+              predefinedNotes={predefinedNotes.map((n) => ({
+                id: n.id,
+                note_text: n.note_text,
+                created_at: n.created_at,
+                created_by: n.created_by,
+              }))}
+              title="Canonical notes & training thread"
+              showTitle
+              withTopBorder={false}
+              emptyMessage="No thread messages yet."
+              adminModeOverride={appUser?.role === "admin" ? "reply" : undefined}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className={`flex min-w-0 flex-row items-start gap-4 overflow-hidden rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 px-4 py-3 shadow-sm sm:overflow-visible sm:p-5 ${
+          appUser?.role === "user" ? "" : "sm:items-center"
+        }`}
+      >
         <div className="shrink-0 sm:self-center">
           <div className="relative h-12 w-12 overflow-hidden rounded-full border border-slate-300 bg-slate-200 shadow-sm sm:h-[7.5rem] sm:w-[7.5rem]">
           {selfieUrl && !selfieLoadFailed ? (
@@ -682,32 +1145,19 @@ export default function UserProfilePage() {
                   </p>
                 </div>
               </div>
-              <div className="flex w-full basis-full shrink-0 flex-wrap items-center gap-1.5 sm:hidden">
-                {accountStatus === "not_active" ? (
-                  <span className="text-xs text-slate-500">KYC required</span>
-                ) : accountStatus === "closed" ? (
-                  <button onClick={reactivateAccount} className="rounded-lg border border-emerald-300 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50/50">
-                    Reactivate Account
-                  </button>
-                ) : accountStatus === "restricted" ? (
-                  <>
-                    <button onClick={unblockAccount} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50/50">Unblock</button>
-                    <button onClick={applyFullBlock} className="rounded-lg border border-rose-300 px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50/50">Full Block</button>
-                    <button onClick={closeAccount} className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100/50">Account Closure</button>
-                  </>
-                ) : accountStatus === "blocked" ? (
-                  <>
-                    <button onClick={unblockAccount} className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50/50">Unblock</button>
-                    <button onClick={closeAccount} className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100/50">Account Closure</button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={applyPartialBlock} disabled={!canOperate} className="rounded-lg border border-amber-300 px-2 py-1 text-[11px] font-medium text-amber-700 enabled:hover:bg-amber-50/50 disabled:cursor-not-allowed disabled:opacity-50">Partial Block</button>
-                    <button onClick={applyFullBlock} disabled={!canOperate} className="rounded-lg border border-rose-300 px-2 py-1 text-[11px] font-medium text-rose-600 enabled:hover:bg-rose-50/50 disabled:cursor-not-allowed disabled:opacity-50">Full Block</button>
-                    <button onClick={closeAccount} disabled={!canOperate} className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100/50 disabled:cursor-not-allowed disabled:opacity-50">Account Closure</button>
-                  </>
-                )}
-              </div>
+              {appUser?.role !== "user" ? (
+                <div className="flex w-full basis-full shrink-0 flex-wrap items-center gap-1.5 sm:hidden">
+                  <SimulatorAccountActionButtons
+                    accountStatus={accountStatus}
+                    canOperate={canOperate}
+                    onReactivateAccount={reactivateAccount}
+                    onUnblockAccount={unblockAccount}
+                    onApplyPartialBlock={applyPartialBlock}
+                    onApplyFullBlock={applyFullBlock}
+                    onCloseAccount={closeAccount}
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-3 hidden min-w-0 flex-col gap-3 sm:flex sm:flex-row sm:items-end sm:justify-between sm:gap-4">
@@ -737,81 +1187,53 @@ export default function UserProfilePage() {
                   </div>
                 </div>
               </div>
-              <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-center gap-1.5 sm:justify-end">
-                {accountStatus === "not_active" ? (
-                  <span className="text-xs text-slate-500">KYC required</span>
-                ) : accountStatus === "closed" ? (
-                  <button
-                    onClick={reactivateAccount}
-                    className="rounded-lg border border-emerald-300 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50/50"
-                  >
-                    Reactivate Account
-                  </button>
-                ) : accountStatus === "restricted" ? (
-                  <>
-                    <button
-                      onClick={unblockAccount}
-                      className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50/50"
-                    >
-                      Unblock
-                    </button>
-                    <button
-                      onClick={applyFullBlock}
-                      className="rounded-lg border border-rose-300 px-2 py-1 text-[11px] font-medium text-rose-600 hover:bg-rose-50/50"
-                    >
-                      Full Block
-                    </button>
-                    <button
-                      onClick={closeAccount}
-                      className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100/50"
-                    >
-                      Account Closure
-                    </button>
-                  </>
-                ) : accountStatus === "blocked" ? (
-                  <>
-                    <button
-                      onClick={unblockAccount}
-                      className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50/50"
-                    >
-                      Unblock
-                    </button>
-                    <button
-                      onClick={closeAccount}
-                      className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100/50"
-                    >
-                      Account Closure
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={applyPartialBlock}
-                      disabled={!canOperate}
-                      className="rounded-lg border border-amber-300 px-2 py-1 text-[11px] font-medium text-amber-700 enabled:hover:bg-amber-50/50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Partial Block
-                    </button>
-                    <button
-                      onClick={applyFullBlock}
-                      disabled={!canOperate}
-                      className="rounded-lg border border-rose-300 px-2 py-1 text-[11px] font-medium text-rose-600 enabled:hover:bg-rose-50/50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Full Block
-                    </button>
-                    <button
-                      onClick={closeAccount}
-                      disabled={!canOperate}
-                      className="rounded-lg border border-slate-400 px-2 py-1 text-[11px] font-medium text-slate-700 enabled:hover:bg-slate-100/50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Account Closure
-                    </button>
-                  </>
-                )}
-              </div>
+              {appUser?.role !== "user" ? (
+                <div className="flex min-w-0 shrink-0 flex-wrap items-end justify-end gap-1.5">
+                  <SimulatorAccountActionButtons
+                    accountStatus={accountStatus}
+                    canOperate={canOperate}
+                    onReactivateAccount={reactivateAccount}
+                    onUnblockAccount={unblockAccount}
+                    onApplyPartialBlock={applyPartialBlock}
+                    onApplyFullBlock={applyFullBlock}
+                    onCloseAccount={closeAccount}
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
-        </div>
+        {appUser?.role === "user" ? (
+          <div className="flex w-[min(100%,12.5rem)] shrink-0 flex-col items-end gap-2 self-end sm:w-auto sm:max-w-[min(100%,20rem)]">
+            {!reviewMode ? (
+              <button
+                type="button"
+                disabled={watchBusy}
+                onClick={() => void onToggleWatch()}
+                className="shrink-0 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              >
+                {watchBusy ? "…" : isWatching ? "Unwatch" : "Watch user"}
+              </button>
+            ) : (
+              <Link
+                href={`/users/${user.id}`}
+                className="max-w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-[10px] font-medium leading-snug text-slate-700 shadow-sm hover:bg-slate-50 sm:max-w-[12rem] sm:px-2.5 sm:text-[11px]"
+              >
+                Back to canonical view
+              </Link>
+            )}
+            <SimulatorAccountActionButtons
+              accountStatus={accountStatus}
+              canOperate={canOperate}
+              onReactivateAccount={reactivateAccount}
+              onUnblockAccount={unblockAccount}
+              onApplyPartialBlock={applyPartialBlock}
+              onApplyFullBlock={applyFullBlock}
+              onCloseAccount={closeAccount}
+              className="flex w-full flex-wrap items-center justify-end gap-1.5"
+            />
+          </div>
+        ) : null}
+      </div>
 
       <div className="flex flex-col gap-4 xl:flex-row">
         <aside className="min-w-0 shrink-0 space-y-4 lg:w-[320px] lg:min-w-[320px] xl:w-[340px] xl:min-w-[340px]">
@@ -1430,41 +1852,50 @@ export default function UserProfilePage() {
           )}
 
           {activeTab === "notes" && (
-            <div className="p-4">
+            <div className="space-y-4 p-4">
               {user?.id ? (
-                <div className="space-y-4">
-                  {appUser?.role === "admin" ? (
-                    <>
-                      <SimulatorCommentsPanel
-                        userId={user.id}
-                        alertId={null}
-                        showTitle={false}
-                        withTopBorder={false}
-                        emptyMessage="No private notes."
-                        adminModeOverride="private"
-                      />
-                      <div className="border-t border-slate-200" />
-                      <SimulatorCommentsPanel
-                        userId={user.id}
-                        alertId={null}
-                        showTitle={false}
-                        withTopBorder={false}
-                        emptyMessage="No notes yet."
-                        adminModeOverride="reply"
-                        predefinedNotes={predefinedNotes}
-                      />
-                    </>
-                  ) : (
+                <>
+                  {internalNotesLoadError ? (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                      Could not load internal notes: {internalNotesLoadError}. In Supabase, ensure{" "}
+                      <span className="font-mono">internal_notes</span> allows <span className="font-mono">select</span> for{" "}
+                      <span className="font-mono">authenticated</span> (see <span className="font-mono">supabase/schema.sql</span>
+                      ).
+                    </p>
+                  ) : null}
+                  <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/80 to-slate-100/80 p-4 shadow-sm">
+                    {appUser?.role === "admin" ? (
+                      <>
+                        <SimulatorCommentsPanel
+                          privateSimulatorUserId={user.id}
+                          privateAlertInternalId={null}
+                          adminModeOverride="private"
+                          showTitle={false}
+                          withTopBorder={false}
+                          emptyMessage="No notes yet."
+                        />
+                        <div className="my-4 border-t border-slate-200" />
+                      </>
+                    ) : null}
+                    {notesTabThreadError ? <p className="mb-2 text-sm text-rose-600">{notesTabThreadError}</p> : null}
                     <SimulatorCommentsPanel
-                      userId={user.id}
-                      alertId={null}
+                      threadId={activeThreadId ?? notesTabThreadId}
+                      reviewMode
+                      privateAlertInternalId={null}
+                      privateSimulatorUserId={null}
+                      predefinedNotes={predefinedNotes.map((n) => ({
+                        id: n.id,
+                        note_text: n.note_text,
+                        created_at: n.created_at,
+                        created_by: n.created_by,
+                      }))}
+                      adminModeOverride={appUser?.role === "admin" ? "reply" : undefined}
                       showTitle={false}
                       withTopBorder={false}
-                      emptyMessage="No notes yet."
-                      predefinedNotes={predefinedNotes}
+                      emptyMessage="No notes in this workspace yet."
                     />
-                  )}
-                </div>
+                  </div>
+                </>
               ) : null}
             </div>
           )}

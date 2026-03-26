@@ -13,6 +13,12 @@ import { useEffect, useMemo, useState } from "react";
 
 type AlertWithRuleName = AlertRow & { rule_name?: string | null };
 
+/** Cap rows so large remote DBs do not hit statement_timeout; client-side filters apply within this window. */
+const ALERT_LIST_LIMIT = 2000;
+/** Omit legacy `type` — some DBs only have `alert_type`. UI uses `alert_type ?? type`. */
+const ALERT_LIST_COLS =
+  "id, internal_id, user_id, alert_type, severity, status, description, rule_code, rule_name, created_at" as const;
+
 export default function AlertsPage() {
   const { appUser } = useCurrentUser();
   const isAdmin = appUser?.role === "admin";
@@ -36,8 +42,9 @@ export default function AlertsPage() {
       setError(null);
       const { data, error: qError } = await supabase
         .from("alerts")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select(ALERT_LIST_COLS)
+        .order("created_at", { ascending: false })
+        .limit(ALERT_LIST_LIMIT);
       if (cancelled) return;
       if (qError) {
         setError(qError.message);
@@ -57,10 +64,22 @@ export default function AlertsPage() {
   }, [query, typeFilter, severityFilter, statusFilter, itemsPerPage]);
 
   const hint = (
-    <p className="text-xs text-rose-800/90">
-      Ensure <code className="rounded bg-rose-100 px-1 font-mono">supabase/schema.sql</code> has been applied in
-      Supabase.
-    </p>
+    <div className="space-y-1 text-xs text-rose-800/90">
+      {error && /timeout/i.test(error) ? (
+        <p>
+          The database stopped the query (often a large <code className="rounded bg-rose-100 px-1 font-mono">alerts</code>{" "}
+          table or a missing index). This page loads at most {ALERT_LIST_LIMIT} newest rows. In the Supabase SQL Editor,
+          run:{" "}
+          <code className="block whitespace-pre-wrap break-all rounded bg-rose-100 px-1 py-0.5 font-mono">
+            create index if not exists alerts_created_at_idx on public.alerts (created_at desc);
+          </code>
+        </p>
+      ) : null}
+      <p>
+        Ensure <code className="rounded bg-rose-100 px-1 font-mono">supabase/schema.sql</code> is applied and env keys
+        match your Supabase project.
+      </p>
+    </div>
   );
 
   const normalizeStr = (v: unknown) => (v == null ? "" : String(v)).trim().toLowerCase();

@@ -37,7 +37,8 @@ export type AlertRow = {
   user_id: string | null;
   /** Some DBs use alert_type instead of type */
   alert_type?: string | null;
-  type: string | null;
+  /** Legacy column; omit in queries when the DB only has `alert_type` */
+  type?: string | null;
   severity: string | null;
   status: string | null;
   description: string | null;
@@ -119,6 +120,8 @@ export type AppUserRow = {
 /** Training / simulation comments only */
 export type SimulatorCommentRow = {
   id: string;
+  thread_id?: string | null;
+  decision_id?: string | null;
   user_id: string | null;
   alert_id: string | null;
   author_app_user_id: string;
@@ -126,6 +129,41 @@ export type SimulatorCommentRow = {
   comment_type: "user_comment" | "admin_qa" | "admin_private";
   parent_comment_id: string | null;
   body: string;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+export type AppUserProfileRow = {
+  app_user_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  country_code: string | null;
+  updated_at: string;
+};
+
+export type ReviewThreadRow = {
+  id: string;
+  app_user_id: string;
+  /** Alert target (public.alerts.id) when context_type = "alert" */
+  alert_id: string | null;
+  /** Profile target (public.users.id) when context_type = "profile" */
+  user_id: string | null;
+  context_type: "alert" | "profile" | string | null;
+  status?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+export type TraineeDecisionRow = {
+  id: string;
+  thread_id: string;
+  alert_id: string | null;
+  user_id: string | null;
+  app_user_id: string;
+  decision: string;
+  proposed_alert_status: string | null;
+  rationale: string | null;
+  review_state: string | null;
   created_at: string;
 };
 

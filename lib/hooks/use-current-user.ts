@@ -1,5 +1,6 @@
 "use client";
 
+import { runSerializedAuth } from "@/lib/auth/auth-user-queue";
 import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { createClient } from "@/lib/supabase";
 import type { AppUserRow } from "@/lib/types";
@@ -19,32 +20,34 @@ export function useCurrentUser(initialSession?: CurrentUserInitialSession) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async (showLoading: boolean) => {
-    const supabase = createClient();
     setError(null);
     if (showLoading) setLoading(true);
     try {
-      const {
-        data: { user },
-        error: authErr,
-      } = await supabase.auth.getUser();
-      if (authErr) {
-        setError(authErr.message);
-        setAuthUser(null);
-        setAppUser(null);
-        return;
-      }
-      setAuthUser(user);
-      if (!user) {
-        setAppUser(null);
-        return;
-      }
-      const { row, error: appErr } = await fetchAppUserRow(supabase, user);
-      if (appErr) {
-        setError(appErr.message);
-        setAppUser(null);
-      } else {
-        setAppUser(row);
-      }
+      await runSerializedAuth(async () => {
+        const supabase = createClient();
+        const {
+          data: { user },
+          error: authErr,
+        } = await supabase.auth.getUser();
+        if (authErr) {
+          setError(authErr.message);
+          setAuthUser(null);
+          setAppUser(null);
+          return;
+        }
+        setAuthUser(user);
+        if (!user) {
+          setAppUser(null);
+          return;
+        }
+        const { row, error: appErr } = await fetchAppUserRow(supabase, user);
+        if (appErr) {
+          setError(appErr.message);
+          setAppUser(null);
+        } else {
+          setAppUser(row);
+        }
+      });
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -55,7 +58,9 @@ export function useCurrentUser(initialSession?: CurrentUserInitialSession) {
     const supabase = createClient();
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
+    } = supabase.auth.onAuthStateChange((event) => {
+      // INITIAL_SESSION is redundant with the refresh() above; handling it again races other hooks' getUser().
+      if (event === "INITIAL_SESSION") return;
       void refresh(false);
     });
     return () => subscription.unsubscribe();

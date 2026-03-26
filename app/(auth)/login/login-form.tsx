@@ -105,8 +105,32 @@ export function LoginForm() {
         data: { user: oauthUser },
       } = await supabase.auth.getUser();
       if (oauthUser) {
-        const { row: oauthProfile } = await fetchAppUserRow(supabase, oauthUser);
-        if (oauthProfile?.is_active === false) {
+        let { row: oauthProfile, error: oauthProfErr } = await fetchAppUserRow(supabase, oauthUser);
+        if (oauthProfErr) {
+          await new Promise((r) => setTimeout(r, 250));
+          const again = await fetchAppUserRow(supabase, oauthUser);
+          oauthProfErr = again.error;
+          oauthProfile = again.row;
+        }
+        if (oauthProfErr) {
+          if (!cancelled) {
+            setMessage(
+              `Could not load your simulator profile (${oauthProfErr.message}). Check app_users / app_user_profiles and RLS.`
+            );
+            setOauthLoading(false);
+          }
+          return;
+        }
+        if (!oauthProfile) {
+          await supabase.auth.signOut();
+          if (!cancelled) {
+            setMessage("Your account is not registered in the simulator yet.");
+            router.replace("/signup?need_app_user=1");
+            setOauthLoading(false);
+          }
+          return;
+        }
+        if (oauthProfile.is_active === false) {
           await supabase.auth.signOut();
           if (!cancelled) {
             setMessage("This account has been deactivated.");
@@ -161,11 +185,20 @@ export function LoginForm() {
       profileRow = second.row;
     }
     if (profileErr) {
-      setMessage("Signed in, but profile check failed. Please reload in a moment.");
+      setMessage(
+        `Could not load your simulator profile (${profileErr.message}). Check that app_users / app_user_profiles exist and RLS allows your user.`
+      );
       setLoading(false);
       return;
     }
-    if (profileRow?.is_active === false) {
+    if (!profileRow) {
+      await supabase.auth.signOut();
+      setMessage("Your account is not registered in the simulator yet.");
+      router.push("/signup?need_app_user=1");
+      setLoading(false);
+      return;
+    }
+    if (profileRow.is_active === false) {
       await supabase.auth.signOut();
       setMessage("This account has been deactivated.");
       setLoading(false);

@@ -4,8 +4,19 @@ import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+
+function NeedAppUserBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("need_app_user") !== "1") return null;
+  return (
+    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+      Your account is not registered in the simulator yet. Complete sign-up below so we can create your
+      workspace profile.
+    </p>
+  );
+}
 
 export default function SignupPage() {
   const router = useRouter();
@@ -127,6 +138,10 @@ export default function SignupPage() {
           </Link>
         </p>
       </div>
+
+      <Suspense fallback={null}>
+        <NeedAppUserBanner />
+      </Suspense>
 
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
 

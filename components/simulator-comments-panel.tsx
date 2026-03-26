@@ -4,12 +4,38 @@ import { formatDateTime } from "@/lib/format";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { useSimulatorComments } from "@/lib/hooks/use-simulator-comments";
 import { createClient } from "@/lib/supabase";
-import { useSearchParams } from "next/navigation";
+import type { SimulatorCommentRow } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+const TRAINEE_ROOT_EDIT_MS = 5 * 60 * 1000;
+
+function subtreeHasAdminQa(rootId: string, all: SimulatorCommentRow[]): boolean {
+  const byParent = new Map<string, SimulatorCommentRow[]>();
+  for (const row of all) {
+    if (!row.parent_comment_id) continue;
+    const list = byParent.get(row.parent_comment_id) ?? [];
+    list.push(row);
+    byParent.set(row.parent_comment_id, list);
+  }
+  const queue = [...(byParent.get(rootId) ?? [])];
+  while (queue.length) {
+    const row = queue.shift()!;
+    if (row.comment_type === "admin_qa") return true;
+    for (const ch of byParent.get(row.id) ?? []) queue.push(ch);
+  }
+  return false;
+}
+
 type Props = {
-  userId?: string | null;
-  alertId?: string | null;
+  /** Review workspace thread (review_threads.id) */
+  threadId?: string | null;
+  /** When true and threadId set, load thread comments */
+  reviewMode?: boolean;
+  /** Targets for admin_private_notes (canonical ids) */
+  privateAlertInternalId?: string | null;
+  privateSimulatorUserId?: string | null;
+  /** Heading above the panel (default: "Comments") */
+  title?: string;
   showTitle?: boolean;
   withTopBorder?: boolean;
   emptyMessage?: string;
@@ -36,8 +62,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export function SimulatorCommentsPanel({
-  userId = null,
-  alertId = null,
+  threadId = null,
+  reviewMode = false,
+  privateAlertInternalId = null,
+  privateSimulatorUserId = null,
+  title = "Comments",
   showTitle = true,
   withTopBorder = true,
   emptyMessage = "No comments yet.",
@@ -45,22 +74,26 @@ export function SimulatorCommentsPanel({
   predefinedNotes = [],
 }: Props) {
   const { appUser, loading: sessionLoading } = useCurrentUser();
-  const searchParams = useSearchParams();
-  const adminThreadRootId = searchParams.get("thread");
   const [adminMode, setAdminMode] = useState<"reply" | "private">(adminModeOverride ?? "reply");
-  const { comments, loading, error, addUserComment, addUserReply, addAdminPrivateComment, addAdminQaReply } =
+  const hasPrivateTarget = Boolean(privateAlertInternalId || privateSimulatorUserId);
+  const includeAdminPrivate = appUser?.role === "admin" && adminMode === "private";
+  const { comments, loading, error, addUserComment, addUserReply, updateUserRootComment, addAdminPrivateComment, addAdminQaReply } =
     useSimulatorComments({
-      userId,
-      alertId,
+      threadId,
+      reviewMode: Boolean(threadId && reviewMode),
+      privateAlertInternalId,
+      privateSimulatorUserId,
       viewerAppUserId: appUser?.id ?? null,
       viewerRole: appUser?.role ?? null,
-      adminThreadRootId,
+      includeAdminPrivate,
     });
   const [authorLabels, setAuthorLabels] = useState<Record<string, string>>({});
   const [body, setBody] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [editingRootId, setEditingRootId] = useState<string | null>(null);
+  const [editRootBody, setEditRootBody] = useState("");
 
   const predefinedItems = useMemo(() => {
     return predefinedNotes
@@ -75,7 +108,7 @@ export function SimulatorCommentsPanel({
 
   const topLevelComments = useMemo(() => {
     return comments
-      .filter((c) => c.parent_comment_id == null && c.comment_type === "user_comment")
+      .filter((c) => c.comment_type !== "admin_private" && c.parent_comment_id == null && c.comment_type === "user_comment")
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [comments]);
 
@@ -91,9 +124,20 @@ export function SimulatorCommentsPanel({
     return topLevelComments[0]?.id ?? null;
   }, [appUser?.role, topLevelComments]);
 
+  const canEditTraineeRoot = useCallback(
+    (c: SimulatorCommentRow) => {
+      if (appUser?.role !== "user" || appUser.id !== c.author_app_user_id) return false;
+      if (c.comment_type !== "user_comment" || c.parent_comment_id != null) return false;
+      if (Date.now() - new Date(c.created_at).getTime() >= TRAINEE_ROOT_EDIT_MS) return false;
+      return !subtreeHasAdminQa(c.id, comments);
+    },
+    [appUser?.id, appUser?.role, comments]
+  );
+
   const repliesByParent = useMemo(() => {
     const map: Record<string, typeof comments> = {};
     for (const c of comments) {
+      if (c.comment_type === "admin_private") continue;
       if (!c.parent_comment_id) continue;
       if (!map[c.parent_comment_id]) map[c.parent_comment_id] = [];
       map[c.parent_comment_id].push(c);
@@ -114,7 +158,7 @@ export function SimulatorCommentsPanel({
   const showAdminThreadHint =
     appUser?.role === "admin" &&
     adminMode === "reply" &&
-    !adminThreadRootId &&
+    !threadId &&
     !hasUserThreads;
 
   useEffect(() => {
@@ -123,12 +167,12 @@ export function SimulatorCommentsPanel({
       setAdminMode(adminModeOverride);
       return;
     }
-    if (adminThreadRootId) {
+    if (threadId) {
       setAdminMode("reply");
     } else {
       setAdminMode("private");
     }
-  }, [appUser?.role, adminThreadRootId, adminModeOverride]);
+  }, [appUser?.role, threadId, adminModeOverride]);
 
   useEffect(() => {
     const authorIds = Array.from(new Set(comments.map((c) => c.author_app_user_id).filter(Boolean)));
@@ -212,11 +256,13 @@ export function SimulatorCommentsPanel({
     [addAdminQaReply, appUser, replyBody]
   );
 
-  if (!userId && !alertId) return null;
+  if (!threadId && !(includeAdminPrivate && hasPrivateTarget) && predefinedNotes.length === 0) {
+    return null;
+  }
 
   return (
     <div className={`${withTopBorder ? "mt-6 border-t border-slate-200 pt-4" : "mt-3"} space-y-3`}>
-      {showTitle ? <h3 className="text-sm font-semibold text-slate-800">Comments</h3> : null}
+      {showTitle ? <h3 className="text-sm font-semibold text-slate-800">{title}</h3> : null}
       {sessionLoading ? (
         <p className="text-xs text-slate-500">Loading session…</p>
       ) : !appUser ? (
@@ -256,9 +302,15 @@ export function SimulatorCommentsPanel({
               <input
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  if (e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  void onAddTrainee();
+                }}
                 placeholder={
                   appUser.role === "admin"
-                    ? "Add private admin note..."
+                    ? "Add admin note..."
                     : "Add note..."
                 }
                 className="min-h-10 w-full flex-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800"
@@ -282,8 +334,8 @@ export function SimulatorCommentsPanel({
         <p className="text-xs text-slate-500">Loading comments…</p>
       ) : !hasVisibleItems ? (
         <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
-          {appUser?.role === "admin" && !adminThreadRootId && adminMode === "reply"
-            ? "Open a comment thread from Admin panel to view notes for a specific user."
+          {appUser?.role === "admin" && !threadId && adminMode === "reply"
+            ? "Open a review thread from the Admin panel or add ?thread= on a case page."
             : emptyMessage}
         </div>
       ) : (
@@ -313,7 +365,7 @@ export function SimulatorCommentsPanel({
               className="rounded-xl border border-amber-300 bg-amber-100/80 p-3 text-sm text-slate-800"
             >
               <div className="mb-1 flex justify-between gap-2 text-[10px] text-slate-500">
-                <span>admin (private)</span>
+                <span>Admin internal</span>
                 <span className="tabular-nums">{formatDateTime(note.created_at)}</span>
               </div>
               <p className="whitespace-pre-wrap text-slate-900">{note.body}</p>
@@ -322,7 +374,10 @@ export function SimulatorCommentsPanel({
             : null}
           {(appUser?.role !== "admin" || adminMode === "reply") &&
             topLevelComments.map((item) => (
-            <li key={item.id} className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-sm text-slate-800">
+            <li
+              key={item.id}
+              className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-sm text-slate-800"
+            >
               <div className="mb-1 flex justify-between gap-2 text-[10px] text-slate-500">
                 <span>
                   {item.author_role === "admin"
@@ -331,7 +386,59 @@ export function SimulatorCommentsPanel({
                 </span>
                 <span className="tabular-nums">{formatDateTime(item.created_at)}</span>
               </div>
-              <p className="whitespace-pre-wrap text-slate-900">{item.body}</p>
+              {editingRootId === item.id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={editRootBody}
+                    onChange={(e) => setEditRootBody(e.target.value)}
+                    rows={3}
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded bg-slate-700 px-2 py-1 text-xs text-white"
+                      onClick={async () => {
+                        if (!appUser?.id || !editRootBody.trim()) return;
+                        setActionError(null);
+                        try {
+                          await updateUserRootComment(item.id, editRootBody, appUser.id);
+                          setEditingRootId(null);
+                          setEditRootBody("");
+                        } catch (e) {
+                          setActionError(getErrorMessage(e, "Failed to save edit"));
+                        }
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-slate-300 px-2 py-1 text-xs"
+                      onClick={() => {
+                        setEditingRootId(null);
+                        setEditRootBody("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="whitespace-pre-wrap text-slate-900">{item.body}</p>
+              )}
+              {appUser?.role === "user" && canEditTraineeRoot(item) && editingRootId !== item.id ? (
+                <button
+                  type="button"
+                  className="mt-1 text-xs text-[#264B5A] underline"
+                  onClick={() => {
+                    setEditingRootId(item.id);
+                    setEditRootBody(item.body);
+                  }}
+                >
+                  Edit (5 min, until admin replies)
+                </button>
+              ) : null}
               {appUser?.role === "admin" && item.comment_type === "user_comment" ? (
                 <div className="mt-2">
                   {replyTo === item.id ? (

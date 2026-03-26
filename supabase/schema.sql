@@ -110,6 +110,8 @@ create policy "Allow public read users" on public.users for select using (true);
 drop policy if exists "Allow public read alerts" on public.alerts;
 create policy "Allow public read alerts" on public.alerts for select using (true);
 
+create index if not exists alerts_created_at_idx on public.alerts (created_at desc);
+
 insert into public.users (
   id, email, country_code, country_name, tier, status, risk_level,
   full_name, registration_date, phone, nationality, date_of_birth, address_text,
@@ -457,7 +459,9 @@ alter table public.internal_notes enable row level security;
 drop policy if exists "Allow public read internal_notes" on public.internal_notes;
 create policy "Allow public read internal_notes" on public.internal_notes for select using (true);
 drop policy if exists "Allow public insert internal_notes" on public.internal_notes;
-create policy "Allow public insert internal_notes" on public.internal_notes for insert with check (true);
+
+revoke insert on public.internal_notes from authenticated;
+grant select on public.internal_notes to authenticated;
 
 insert into public.internal_notes (id, user_id, text, note_text, note_type, created_at) values
 ('c0000001-0000-4000-8000-000000000001', 'u-1001', 'EDD review requested due to increased monthly turnover.', 'EDD review requested due to increased monthly turnover.', 'system', '2026-03-18 10:00:00+00'),
@@ -548,6 +552,35 @@ as $$
 $$;
 
 grant execute on function public.app_user_matches_jwt(uuid, text) to authenticated;
+
+-- app_users.id for the signed-in JWT user, without re-entering RLS on app_users.
+-- Policies that do `exists (select 1 from app_users ...)` from app_user_profiles can
+-- recurse with other policies/triggers and hit "stack depth limit exceeded".
+create or replace function public.current_app_user_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select au.id
+     from public.app_users au
+     where au.auth_user_id = auth.uid()
+     limit 1),
+    (select au.id
+     from public.app_users au
+     where au.email is not null
+       and btrim(au.email) <> ''
+       and (auth.jwt() ->> 'email') is not null
+       and btrim((auth.jwt() ->> 'email')) <> ''
+       and lower(btrim(au.email)) = lower(btrim((auth.jwt() ->> 'email')))
+     limit 1)
+  );
+$$;
+
+revoke all on function public.current_app_user_id() from public;
+grant execute on function public.current_app_user_id() to authenticated;
 
 alter table public.app_users enable row level security;
 drop policy if exists "app_users_select_own" on public.app_users;
@@ -738,6 +771,453 @@ create policy "admin_private_notes_insert_own" on public.admin_private_notes
   );
 
 grant select, insert on public.admin_private_notes to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Review / workspace layer (trainee decisions, threads, assignments)
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.app_user_profiles (
+  app_user_id uuid primary key references public.app_users (id) on delete cascade,
+  first_name text,
+  last_name text,
+  country_code text,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.app_user_profiles enable row level security;
+drop policy if exists "app_user_profiles_select_own" on public.app_user_profiles;
+create policy "app_user_profiles_select_own" on public.app_user_profiles
+  for select to authenticated
+  using (app_user_id = public.current_app_user_id());
+drop policy if exists "app_user_profiles_upsert_own" on public.app_user_profiles;
+create policy "app_user_profiles_upsert_own" on public.app_user_profiles
+  for insert to authenticated
+  with check (app_user_id = public.current_app_user_id());
+drop policy if exists "app_user_profiles_update_own" on public.app_user_profiles;
+create policy "app_user_profiles_update_own" on public.app_user_profiles
+  for update to authenticated
+  using (app_user_id = public.current_app_user_id())
+  with check (app_user_id = public.current_app_user_id());
+
+grant select, insert, update on public.app_user_profiles to authenticated;
+
+create table if not exists public.app_user_activity (
+  id uuid primary key default gen_random_uuid(),
+  app_user_id uuid not null references public.app_users (id) on delete cascade,
+  event_type text not null,
+  meta jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.app_user_activity enable row level security;
+drop policy if exists "app_user_activity_own" on public.app_user_activity;
+create policy "app_user_activity_own" on public.app_user_activity
+  for all to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+    )
+  );
+
+grant select, insert on public.app_user_activity to authenticated;
+
+create table if not exists public.review_threads (
+  id uuid primary key default gen_random_uuid(),
+  app_user_id uuid not null references public.app_users (id) on delete cascade,
+  alert_internal_id uuid references public.alerts (internal_id) on delete cascade,
+  user_id text references public.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint review_threads_target_check check (
+    alert_internal_id is not null or user_id is not null
+  )
+);
+
+create unique index if not exists review_threads_trainee_alert_uidx
+  on public.review_threads (app_user_id, alert_internal_id)
+  where alert_internal_id is not null;
+
+create unique index if not exists review_threads_trainee_user_uidx
+  on public.review_threads (app_user_id, user_id)
+  where user_id is not null and alert_internal_id is null;
+
+alter table public.review_threads enable row level security;
+drop policy if exists "review_threads_select_trainee" on public.review_threads;
+create policy "review_threads_select_trainee" on public.review_threads
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+    )
+    or exists (
+      select 1 from public.app_users au
+      where public.app_user_matches_jwt(au.auth_user_id, au.email)
+        and au.role = 'admin'
+    )
+  );
+drop policy if exists "review_threads_insert_trainee" on public.review_threads;
+create policy "review_threads_insert_trainee" on public.review_threads
+  for insert to authenticated
+  with check (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'user'
+    )
+  );
+
+grant select, insert on public.review_threads to authenticated;
+
+create table if not exists public.trainee_decisions (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references public.review_threads (id) on delete cascade,
+  alert_id text references public.alerts (id) on delete set null,
+  user_id text references public.users (id) on delete set null,
+  app_user_id uuid not null references public.app_users (id) on delete cascade,
+  decision text not null,
+  proposed_alert_status text,
+  rationale text,
+  review_state text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists trainee_decisions_thread_idx on public.trainee_decisions (thread_id, created_at desc);
+
+alter table public.trainee_decisions enable row level security;
+drop policy if exists "trainee_decisions_select" on public.trainee_decisions;
+create policy "trainee_decisions_select" on public.trainee_decisions
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.review_threads rt
+      join public.app_users me on me.id = rt.app_user_id
+      where rt.id = thread_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+    )
+    or exists (
+      select 1 from public.app_users au
+      where public.app_user_matches_jwt(au.auth_user_id, au.email)
+        and au.role = 'admin'
+    )
+  );
+drop policy if exists "trainee_decisions_insert" on public.trainee_decisions;
+create policy "trainee_decisions_insert" on public.trainee_decisions
+  for insert to authenticated
+  with check (
+    app_user_id in (
+      select me.id from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'user'
+    )
+    and exists (
+      select 1 from public.review_threads rt
+      where rt.id = thread_id
+        and rt.app_user_id = app_user_id
+    )
+  );
+
+grant select, insert on public.trainee_decisions to authenticated;
+
+create table if not exists public.trainee_alert_assignments (
+  id uuid primary key default gen_random_uuid(),
+  app_user_id uuid not null references public.app_users (id) on delete cascade,
+  alert_internal_id uuid not null references public.alerts (internal_id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (app_user_id, alert_internal_id)
+);
+
+alter table public.trainee_alert_assignments enable row level security;
+drop policy if exists "trainee_assign_select" on public.trainee_alert_assignments;
+create policy "trainee_assign_select" on public.trainee_alert_assignments
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+    )
+    or exists (
+      select 1 from public.app_users au
+      where public.app_user_matches_jwt(au.auth_user_id, au.email)
+        and au.role = 'admin'
+    )
+  );
+drop policy if exists "trainee_assign_write" on public.trainee_alert_assignments;
+create policy "trainee_assign_write" on public.trainee_alert_assignments
+  for all to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'user'
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'user'
+    )
+  );
+
+grant select, insert, update, delete on public.trainee_alert_assignments to authenticated;
+
+create table if not exists public.trainee_user_watchlist (
+  id uuid primary key default gen_random_uuid(),
+  app_user_id uuid not null references public.app_users (id) on delete cascade,
+  simulator_user_id text not null references public.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (app_user_id, simulator_user_id)
+);
+
+alter table public.trainee_user_watchlist enable row level security;
+drop policy if exists "trainee_watch_select" on public.trainee_user_watchlist;
+create policy "trainee_watch_select" on public.trainee_user_watchlist
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+    )
+    or exists (
+      select 1 from public.app_users au
+      where public.app_user_matches_jwt(au.auth_user_id, au.email)
+        and au.role = 'admin'
+    )
+  );
+drop policy if exists "trainee_watch_write" on public.trainee_user_watchlist;
+create policy "trainee_watch_write" on public.trainee_user_watchlist
+  for all to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'user'
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.app_users me
+      where me.id = app_user_id
+        and public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'user'
+    )
+  );
+
+grant select, insert, delete on public.trainee_user_watchlist to authenticated;
+
+-- Thread-scoped comments (legacy user_id/alert_id rows remain valid)
+alter table public.simulator_comments add column if not exists thread_id uuid references public.review_threads (id) on delete cascade;
+alter table public.simulator_comments add column if not exists decision_id uuid references public.trainee_decisions (id) on delete set null;
+
+alter table public.simulator_comments drop constraint if exists simulator_comment_target_check;
+alter table public.simulator_comments add constraint simulator_comment_target_check_v2 check (
+  thread_id is not null
+  or (user_id is not null and alert_id is null)
+  or (user_id is null and alert_id is not null)
+);
+
+create index if not exists simulator_comments_thread_idx
+  on public.simulator_comments (thread_id, created_at desc);
+
+drop policy if exists "sim_comments_insert_user" on public.simulator_comments;
+create policy "sim_comments_insert_user" on public.simulator_comments
+  for insert with check (
+    comment_type = 'user_comment'
+    and author_role = 'user'
+    and exists (
+      select 1 from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.id = author_app_user_id
+        and me.role = 'user'
+    )
+    and (
+      (
+        thread_id is not null
+        and exists (
+          select 1 from public.review_threads rt
+          where rt.id = thread_id
+            and rt.app_user_id = author_app_user_id
+        )
+        and (
+          parent_comment_id is null
+          or exists (
+            select 1
+            from public.simulator_comments root
+            where root.id = parent_comment_id
+              and root.comment_type = 'user_comment'
+              and root.author_app_user_id = author_app_user_id
+              and root.thread_id = simulator_comments.thread_id
+          )
+        )
+      )
+      or (
+        thread_id is null
+        and (
+          (user_id is not null and alert_id is null)
+          or (user_id is null and alert_id is not null)
+        )
+        and (
+          parent_comment_id is null
+          or exists (
+            select 1
+            from public.simulator_comments root
+            join public.app_users me
+              on public.app_user_matches_jwt(me.auth_user_id, me.email)
+            where root.id = parent_comment_id
+              and root.comment_type = 'user_comment'
+              and root.author_app_user_id = me.id
+          )
+        )
+      )
+    )
+  );
+
+drop policy if exists "sim_comments_insert_admin_qa" on public.simulator_comments;
+create policy "sim_comments_insert_admin_qa" on public.simulator_comments
+  for insert with check (
+    comment_type = 'admin_qa'
+    and author_role = 'admin'
+    and parent_comment_id is not null
+    and exists (
+      select 1 from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.role = 'admin'
+    )
+    and exists (
+      select 1 from public.simulator_comments p
+      where p.id = parent_comment_id
+        and p.comment_type = 'user_comment'
+        and (
+          simulator_comments.thread_id is null
+          or p.thread_id = simulator_comments.thread_id
+        )
+    )
+  );
+
+drop policy if exists "sim_comments_select_author" on public.simulator_comments;
+create policy "sim_comments_select_author" on public.simulator_comments
+  for select using (
+    exists (
+      select 1 from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.id = simulator_comments.author_app_user_id
+    )
+    or (
+      thread_id is not null
+      and exists (
+        select 1 from public.review_threads rt
+        join public.app_users me on me.id = rt.app_user_id
+        where rt.id = thread_id
+          and public.app_user_matches_jwt(me.auth_user_id, me.email)
+      )
+    )
+  );
+
+drop policy if exists "sim_comments_select_qa_reply" on public.simulator_comments;
+create policy "sim_comments_select_qa_reply" on public.simulator_comments
+  for select using (
+    comment_type = 'admin_qa'
+    and parent_comment_id is not null
+    and exists (
+      select 1
+      from public.simulator_comments p
+      join public.app_users me
+        on public.app_user_matches_jwt(me.auth_user_id, me.email)
+      where p.id = simulator_comments.parent_comment_id
+        and p.author_app_user_id = me.id
+    )
+  );
+
+-- Trainee may edit their own root thread message within 5 minutes if no admin QA exists under that root.
+alter table public.simulator_comments add column if not exists updated_at timestamptz;
+
+create or replace function public.trainee_top_comment_still_editable(p_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (
+      select
+        c.comment_type = 'user_comment'
+        and c.author_role = 'user'
+        and c.parent_comment_id is null
+        and c.thread_id is not null
+        and c.created_at > now() - interval '5 minutes'
+        and not exists (
+          select 1
+          from public.simulator_comments aq
+          where aq.thread_id = c.thread_id
+            and aq.comment_type = 'admin_qa'
+            and aq.parent_comment_id is not null
+            and (
+              aq.parent_comment_id = c.id
+              or exists (
+                with recursive ancestors as (
+                  select sc.id, sc.parent_comment_id
+                  from public.simulator_comments sc
+                  where sc.id = aq.parent_comment_id
+                  union all
+                  select sc2.id, sc2.parent_comment_id
+                  from public.simulator_comments sc2
+                  join ancestors a on sc2.id = a.parent_comment_id
+                  where a.parent_comment_id is not null
+                )
+                select 1 from ancestors where id = c.id
+              )
+            )
+        )
+      from public.simulator_comments c
+      where c.id = p_id
+    ),
+    false
+  );
+$$;
+
+revoke all on function public.trainee_top_comment_still_editable(uuid) from public;
+grant execute on function public.trainee_top_comment_still_editable(uuid) to authenticated;
+
+drop policy if exists "sim_comments_update_user_trainee_root" on public.simulator_comments;
+create policy "sim_comments_update_user_trainee_root" on public.simulator_comments
+  for update to authenticated
+  using (
+    exists (
+      select 1 from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.id = author_app_user_id
+        and me.role = 'user'
+    )
+    and public.trainee_top_comment_still_editable(id)
+  )
+  with check (
+    exists (
+      select 1 from public.app_users me
+      where public.app_user_matches_jwt(me.auth_user_id, me.email)
+        and me.id = author_app_user_id
+        and me.role = 'user'
+    )
+    and public.trainee_top_comment_still_editable(id)
+  );
+
+grant update (body, updated_at) on public.simulator_comments to authenticated;
 
 -- Link Supabase Auth users after they exist in auth.users:
 -- insert into public.app_users (auth_user_id, role, email, full_name, is_active)

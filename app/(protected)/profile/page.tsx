@@ -15,6 +15,9 @@ export default async function ProfilePage() {
   if (!user) redirect("/sign-in");
 
   const { row: appUser, error } = await fetchAppUserRow(supabase, user);
+  if (!error && !appUser) {
+    redirect("/signup?need_app_user=1");
+  }
   const profileHeading = appUserProfileHeading(appUser);
 
   return (
@@ -42,12 +45,6 @@ export default async function ProfilePage() {
             {error ? (
               <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 Could not load profile data: {error.message}
-              </p>
-            ) : null}
-
-            {!appUser && !error ? (
-              <p className="mt-4 text-sm text-slate-600">
-                Profile data was not found for this account. Showing auth email only.
               </p>
             ) : null}
 

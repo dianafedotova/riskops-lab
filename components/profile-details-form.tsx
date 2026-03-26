@@ -12,11 +12,6 @@ type ProfileDetailsFormProps = {
   authEmail: string;
 };
 
-function buildFullName(first: string, last: string): string | null {
-  const t = `${first.trim()} ${last.trim()}`.trim();
-  return t.length ? t : null;
-}
-
 const controlClass =
   "h-9 w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 shadow-sm focus:border-[#5e8d9c] focus:outline-none focus:ring-1 focus:ring-[#5e8d9c]/40";
 
@@ -55,9 +50,6 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
     setCountryCode(appUser?.country_code?.trim() ?? "");
   }, [appUser?.first_name, appUser?.last_name, appUser?.country_code]);
 
-  const selectedCountryName =
-    COUNTRY_OPTIONS.find((c) => c.code === countryCode)?.name ?? null;
-
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     setMessage(null);
@@ -75,18 +67,16 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
 
-      const full_name = buildFullName(firstName, lastName);
-
-      const { error: upErr } = await supabase
-        .from("app_users")
-        .update({
+      const { error: upErr } = await supabase.from("app_user_profiles").upsert(
+        {
+          app_user_id: appUser.id,
           first_name: firstName.trim() || null,
           last_name: lastName.trim() || null,
-          full_name,
           country_code: countryCode.trim() || null,
-          country_name: selectedCountryName,
-        })
-        .eq("auth_user_id", user.id);
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "app_user_id" }
+      );
 
       if (upErr) throw upErr;
       setMessage("Saved.");
