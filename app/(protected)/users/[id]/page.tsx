@@ -1203,7 +1203,7 @@ export default function UserProfilePage() {
             </div>
           </div>
         {appUser?.role === "user" ? (
-          <div className="flex w-[min(100%,12.5rem)] shrink-0 flex-col items-end gap-2 self-end sm:w-auto sm:max-w-[min(100%,20rem)]">
+          <div className="flex w-[min(100%,12.5rem)] shrink-0 flex-col items-end justify-between gap-2 self-stretch sm:w-auto sm:max-w-[min(100%,20rem)]">
             {!reviewMode ? (
               <button
                 type="button"

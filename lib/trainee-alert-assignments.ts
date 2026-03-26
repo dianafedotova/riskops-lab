@@ -87,16 +87,21 @@ export async function fetchAlertAssignees(
     .eq(col, idVal);
 
   if (!nested.error && nested.data?.length) {
-    const list: TraineeAssigneeRow[] = (
-      nested.data as {
-        app_user_id: string;
-        app_users: { full_name: string | null; email: string | null } | null;
-      }[]
-    ).map((r) => ({
-      app_user_id: r.app_user_id,
-      full_name: r.app_users?.full_name ?? null,
-      email: r.app_users?.email ?? null,
-    }));
+    const rows = (nested.data ?? []) as Array<{
+      app_user_id: string;
+      app_users?:
+        | { full_name?: string | null; email?: string | null }
+        | Array<{ full_name?: string | null; email?: string | null }>
+        | null;
+    }>;
+    const list: TraineeAssigneeRow[] = rows.map((r) => {
+      const profile = Array.isArray(r.app_users) ? r.app_users[0] ?? null : r.app_users ?? null;
+      return {
+        app_user_id: r.app_user_id,
+        full_name: profile?.full_name ?? null,
+        email: profile?.email ?? null,
+      };
+    });
     return { assignees: list };
   }
 
