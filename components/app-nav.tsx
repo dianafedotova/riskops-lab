@@ -1,18 +1,10 @@
-import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
 import { AppNavClient } from "@/components/app-nav-client";
+import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function AppNav() {
   const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { authUser, appUser } = await getCurrentAppUser(supabase);
 
-  let appUser = null;
-  if (user) {
-    const { row } = await fetchAppUserRow(supabase, user);
-    appUser = row;
-  }
-
-  return <AppNavClient initialSession={{ authUser: user, appUser }} />;
+  return <AppNavClient initialSession={{ authUser, appUser }} />;
 }

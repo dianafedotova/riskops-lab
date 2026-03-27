@@ -61,13 +61,11 @@ export function ProfileIdentityHeader({ appUser, displayName, subtitle }: Profil
     setBusy(true);
     try {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("No authenticated user");
+      const authUserId = appUser.auth_user_id?.trim();
+      if (!authUserId) throw new Error("Profile auth identity is missing");
 
       const ext = getSafeImageExt(selectedFile.name, selectedFile.type);
-      const filePath = `${user.id}/avatar.${ext}`;
+      const filePath = `${authUserId}/avatar.${ext}`;
 
       const { error: uploadErr } = await supabase.storage
         .from("avatars")
@@ -81,7 +79,7 @@ export function ProfileIdentityHeader({ appUser, displayName, subtitle }: Profil
       const { error: updateErr } = await supabase
         .from("app_users")
         .update({ avatar_url: filePath })
-        .eq("auth_user_id", user.id);
+        .eq("auth_user_id", authUserId);
 
       if (updateErr) throw new Error(`Profile row update failed: ${updateErr.message}`);
 

@@ -4,6 +4,7 @@ import { QueryErrorBanner } from "@/components/query-error";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { canSeeStaffActionControls } from "@/lib/permissions/checks";
 import { TABLE_PY } from "@/lib/table-padding";
 import { createClient } from "@/lib/supabase";
 import type { UserRow } from "@/lib/types";
@@ -21,8 +22,7 @@ type UserListRow = Pick<
 
 export default function UsersPage() {
   const { appUser } = useCurrentUser();
-  const isAdmin = appUser?.role === "admin";
-  const supabase = createClient();
+  const canViewStaffActions = canSeeStaffActionControls(appUser?.role);
   const router = useRouter();
   const [users, setUsers] = useState<UserListRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +40,7 @@ export default function UsersPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const supabase = createClient();
       setLoading(true);
       setError(null);
       const { data, error: qError } = await supabase
@@ -60,10 +61,6 @@ export default function UsersPage() {
       cancelled = true;
     };
   }, [reloadTick]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [query, statusFilter, riskFilter, tierFilter, countryFilter, itemsPerPage]);
 
   const normalizeStr = (v: unknown) => (v == null ? "" : String(v)).trim().toLowerCase();
 
@@ -192,7 +189,7 @@ export default function UsersPage() {
   return (
     <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
       <div className="mx-auto w-full max-w-5xl space-y-4">
-      {isAdmin ? (
+      {canViewStaffActions ? (
         <div className="flex flex-wrap items-center justify-end gap-4">
           <button
             type="button"
@@ -218,7 +215,10 @@ export default function UsersPage() {
               type="text"
               placeholder="User ID, name, or email…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-colors duration-150 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
             />
           </div>
@@ -231,7 +231,10 @@ export default function UsersPage() {
                 <select
                   id="filter-status"
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPage(1);
+                  }}
                   className="h-10 w-[min(100%,8.5rem)] min-w-[7.25rem] appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
                 >
                   <option value="all">Any</option>
@@ -262,7 +265,10 @@ export default function UsersPage() {
                 <select
                   id="filter-risk"
                   value={riskFilter}
-                  onChange={(e) => setRiskFilter(e.target.value)}
+                  onChange={(e) => {
+                    setRiskFilter(e.target.value);
+                    setPage(1);
+                  }}
                   className="h-10 w-[min(100%,7.5rem)] min-w-[6.75rem] appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
                 >
                   <option value="all">Any</option>
@@ -293,7 +299,10 @@ export default function UsersPage() {
                 <select
                   id="filter-tier"
                   value={tierFilter}
-                  onChange={(e) => setTierFilter(e.target.value)}
+                  onChange={(e) => {
+                    setTierFilter(e.target.value);
+                    setPage(1);
+                  }}
                   className="h-10 w-[min(100%,7.5rem)] min-w-[6.75rem] appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
                 >
                   <option value="all">Any</option>
@@ -326,7 +335,10 @@ export default function UsersPage() {
                 <select
                   id="filter-country"
                   value={countryFilter}
-                  onChange={(e) => setCountryFilter(e.target.value)}
+                  onChange={(e) => {
+                    setCountryFilter(e.target.value);
+                    setPage(1);
+                  }}
                   className="h-10 w-[7rem] max-w-[7.25rem] appearance-none rounded-lg border border-slate-200 bg-white px-2.5 pr-8 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
                 >
                   <option value="all">Any</option>

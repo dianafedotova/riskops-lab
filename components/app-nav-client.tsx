@@ -2,6 +2,7 @@
 
 import { UserAccountMenu } from "@/components/user-account-menu";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { canSeeAdminNavLink } from "@/lib/permissions/checks";
 import type { AppUserRow } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
@@ -39,7 +40,7 @@ type AppNavClientProps = {
 export function AppNavClient({ initialSession }: AppNavClientProps) {
   const pathname = usePathname() ?? "";
   const { authUser, appUser, loading: authLoading } = useCurrentUser(initialSession);
-  const showAdminPanel = !authLoading && appUser?.role === "admin";
+  const showAdminPanel = !authLoading && canSeeAdminNavLink(appUser?.role);
   const privateNavLinks = showAdminPanel
     ? [privateNavLinksBase[0], adminPanelLink, ...privateNavLinksBase.slice(1)]
     : privateNavLinksBase;

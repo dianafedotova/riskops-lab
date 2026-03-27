@@ -1,5 +1,5 @@
 import { appUserProfileHeading } from "@/lib/auth/app-user-display";
-import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
+import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { ProfileDeactivateAccount } from "@/components/profile-deactivate-account";
 import { ProfileDetailsForm } from "@/components/profile-details-form";
 import { ProfileIdentityHeader } from "@/components/profile-identity-header";
@@ -9,12 +9,8 @@ import { redirect } from "next/navigation";
 
 export default async function ProfilePage() {
   const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
-
-  const { row: appUser, error } = await fetchAppUserRow(supabase, user);
+  const { authUser, appUser, error } = await getCurrentAppUser(supabase);
+  if (!authUser) redirect("/sign-in");
   if (!error && !appUser) {
     redirect("/signup?need_app_user=1");
   }
@@ -48,7 +44,11 @@ export default async function ProfilePage() {
               </p>
             ) : null}
 
-            <ProfileDetailsForm appUser={appUser} authEmail={user.email ?? ""} />
+            <ProfileDetailsForm
+              key={`${appUser?.id ?? "none"}:${appUser?.updated_at ?? "none"}:${appUser?.first_name ?? ""}:${appUser?.last_name ?? ""}:${appUser?.country_code ?? ""}`}
+              appUser={appUser}
+              authEmail={authUser.email ?? ""}
+            />
             <ProfileDeactivateAccount appUser={appUser} />
           </div>
         </section>

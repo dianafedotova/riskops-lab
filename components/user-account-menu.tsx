@@ -8,6 +8,7 @@ import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type UserAccountMenuProps = {
   authUser: User;
@@ -17,24 +18,29 @@ type UserAccountMenuProps = {
 export function UserAccountMenu({ authUser, appUser }: UserAccountMenuProps) {
   const router = useRouter();
   const pathname = usePathname() ?? "";
-  const [open, setOpen] = useState(false);
+  const [openPathname, setOpenPathname] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const displayName = appUserDisplayName(appUser, authUser.email);
   const initials = appUserInitials(displayName);
+  const open = openPathname === pathname;
   const onLogout = async () => {
-    setOpen(false);
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.replace("/sign-in");
-    router.refresh();
+    setSigningOut(true);
+    setOpenPathname(null);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signOut({ scope: "local" });
+      if (error) console.warn(error);
+      router.replace("/sign-in");
+    } catch (e) {
+      console.warn(e);
+      setSigningOut(false);
+      router.replace("/sign-in");
+    }
   };
 
-  const close = useCallback(() => setOpen(false), []);
-
-  useEffect(() => {
-    close();
-  }, [pathname, close]);
+  const close = useCallback(() => setOpenPathname(null), []);
 
   useEffect(() => {
     if (!open) return;
@@ -55,12 +61,32 @@ export function UserAccountMenu({ authUser, appUser }: UserAccountMenuProps) {
 
   return (
     <div className="relative shrink-0" ref={rootRef}>
+      {typeof document !== "undefined" && signingOut
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/35 backdrop-blur-[1px]"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <p className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-lg">
+                Signing out…
+              </p>
+            </div>,
+            document.body
+          )
+        : null}
       <button
         type="button"
-        className="inline-flex max-w-[min(100%,14rem)] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-[#6f9fb0]/18 sm:py-1.5"
+        disabled={signingOut}
+        className="inline-flex max-w-[min(100%,14rem)] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-[#6f9fb0]/18 disabled:cursor-not-allowed disabled:opacity-60 sm:py-1.5"
         aria-expanded={open}
         aria-haspopup="menu"
-        onClick={() => setOpen((v) => !v)}
+        aria-busy={signingOut}
+        onClick={() => {
+          if (signingOut) return;
+          setOpenPathname((current) => (current === pathname ? null : pathname));
+        }}
       >
         <span className="min-w-0 truncate">{displayName}</span>
         <span className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-[#5e8d9c]/25 ring-1 ring-slate-300/80">
@@ -90,8 +116,11 @@ export function UserAccountMenu({ authUser, appUser }: UserAccountMenuProps) {
           <Link
             href="/profile"
             role="menuitem"
-            className="block px-3 py-2.5 text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-[#5e8d9c] hover:text-white"
-            onClick={close}
+            aria-disabled={signingOut}
+            className={`block px-3 py-2.5 text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-[#5e8d9c] hover:text-white ${
+              signingOut ? "pointer-events-none opacity-50" : ""
+            }`}
+            onClick={signingOut ? (e) => e.preventDefault() : close}
           >
             My profile
           </Link>
@@ -99,10 +128,12 @@ export function UserAccountMenu({ authUser, appUser }: UserAccountMenuProps) {
           <button
             type="button"
             role="menuitem"
-            className="w-full px-3 py-2.5 text-left text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-[var(--brand-dot)] hover:text-white"
+            disabled={signingOut}
+            className="w-full px-3 py-2.5 text-left text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-[var(--brand-dot)] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            aria-busy={signingOut}
             onClick={() => void onLogout()}
           >
-            Log out
+            {signingOut ? "Signing out…" : "Log out"}
           </button>
         </div>
       ) : null}

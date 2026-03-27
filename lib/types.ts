@@ -1,3 +1,21 @@
+import type { AppUserRole } from "./app-user-role";
+
+export type AlertPublicId = string;
+export type AlertInternalId = string;
+export type ReviewThreadContextType = "alert" | "profile";
+/**
+ * Persisted workflow marker in legacy table columns such as
+ * `simulator_comments.author_role` / `admin_private_notes.author_role`.
+ * This is NOT the canonical app role model from `public.app_users.role`.
+ */
+export type PersistedWorkflowAuthorRole = "admin" | "trainee";
+export type SimulatorCommentType = "user_comment" | "admin_qa" | "admin_private";
+export type TraineeDecisionValue =
+  | "false_positive"
+  | "true_positive"
+  | "info_requested"
+  | "escalated";
+
 /** Rows from `public.users` / `public.alerts` (snake_case = Postgres columns). */
 export type UserRow = {
   id: string;
@@ -31,9 +49,10 @@ export type UserRow = {
 };
 
 export type AlertRow = {
-  id: string;
-  /** Technical UUID used for joins/comments */
-  internal_id?: string | null;
+  /** Canonical UI / display alert identifier. */
+  id: AlertPublicId;
+  /** Canonical technical alert identifier for joins / workflow refs. */
+  internal_id?: AlertInternalId | null;
   user_id: string | null;
   /** Some DBs use alert_type instead of type */
   alert_type?: string | null;
@@ -97,11 +116,11 @@ export type OpsEventRow = {
   performed_by: string | null;
 };
 
-/** Real app user (trainee or admin), linked to auth.users */
+/** Real app user (trainee or staff), linked to auth.users */
 export type AppUserRow = {
   id: string;
   auth_user_id: string;
-  role: "admin" | "user";
+  role: AppUserRole;
   email: string | null;
   created_at: string;
   full_name: string | null;
@@ -123,14 +142,25 @@ export type SimulatorCommentRow = {
   thread_id?: string | null;
   decision_id?: string | null;
   user_id: string | null;
-  alert_id: string | null;
+  alert_id: AlertPublicId | null;
   author_app_user_id: string;
-  author_role: "admin" | "user";
-  comment_type: "user_comment" | "admin_qa" | "admin_private";
+  /** Legacy persisted DB marker; not the canonical app role union. */
+  author_role: PersistedWorkflowAuthorRole;
+  comment_type: SimulatorCommentType;
   parent_comment_id: string | null;
   body: string;
   created_at: string;
   updated_at?: string | null;
+};
+
+export type ReviewDiscussionCommentRow = SimulatorCommentRow & {
+  comment_type: "user_comment" | "admin_qa";
+};
+
+export type PrivateNoteCommentRow = SimulatorCommentRow & {
+  thread_id: null;
+  comment_type: "admin_private";
+  parent_comment_id: null;
 };
 
 export type AppUserProfileRow = {
@@ -145,10 +175,10 @@ export type ReviewThreadRow = {
   id: string;
   app_user_id: string;
   /** Alert target (public.alerts.id) when context_type = "alert" */
-  alert_id: string | null;
+  alert_id: AlertPublicId | null;
   /** Profile target (public.users.id) when context_type = "profile" */
   user_id: string | null;
-  context_type: "alert" | "profile" | string | null;
+  context_type: ReviewThreadContextType | null;
   status?: string | null;
   created_at: string;
   updated_at?: string | null;
@@ -157,30 +187,28 @@ export type ReviewThreadRow = {
 export type TraineeDecisionRow = {
   id: string;
   thread_id: string;
-  alert_id: string | null;
+  /** Alert target uses the canonical public alert id. */
+  alert_id: AlertPublicId | null;
   user_id: string | null;
   app_user_id: string;
-  decision: string;
+  decision: TraineeDecisionValue;
   proposed_alert_status: string | null;
   rationale: string | null;
   review_state: string | null;
   created_at: string;
 };
 
-export type UserNoteRow = {
+export type InternalNoteRow = {
   id: string;
   user_id: string;
   note_text: string;
-  note_type?: "system" | "analyst" | "admin" | null;
   created_at: string;
   created_by: string | null;
-  updated_at?: string | null;
-  updated_by?: string | null;
 };
 
-export type AlertNoteRow = {
+export type PredefinedAlertNoteRow = {
   id: string;
-  alert_id: string;
+  alert_id: AlertPublicId;
   note_text: string;
   created_at: string;
   created_by: string | null;

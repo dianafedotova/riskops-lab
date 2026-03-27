@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { mapAlertInternalToPublicIds } from "@/lib/alerts/identity";
 import { formatPostgrestError, isPostgrestUnknownColumnError } from "@/lib/trainee-user-watchlist";
 
 export type DashboardThreadSummary = {
@@ -25,7 +26,7 @@ export async function loadReviewThreadSummariesForDashboard(
   supabase: SupabaseClient,
   appUserId: string
 ): Promise<{ summaries: DashboardThreadSummary[]; error: string | null }> {
-  let normalized: NormalizedThreadRow[] = [];
+  const normalized: NormalizedThreadRow[] = [];
 
   const modern = await supabase
     .from("review_threads")
@@ -75,18 +76,12 @@ export async function loadReviewThreadSummariesForDashboard(
       created_at: string;
     }[];
     const internalIds = [...new Set(raw.map((r) => r.alert_internal_id).filter(Boolean))] as string[];
-    const internalToPublic = new Map<string, string>();
-    if (internalIds.length > 0) {
-      const { data: als, error: aErr } = await supabase
-        .from("alerts")
-        .select("id, internal_id")
-        .in("internal_id", internalIds);
-      if (aErr) {
-        return { summaries: [], error: formatPostgrestError(aErr) };
-      }
-      for (const a of (als ?? []) as { id: string; internal_id: string }[]) {
-        internalToPublic.set(String(a.internal_id), String(a.id));
-      }
+    const { mapping: internalToPublic, error: alertMapErr } = await mapAlertInternalToPublicIds(
+      supabase,
+      internalIds
+    );
+    if (alertMapErr) {
+      return { summaries: [], error: alertMapErr.message };
     }
     for (const r of raw) {
       const intId = r.alert_internal_id ? String(r.alert_internal_id) : null;
@@ -144,10 +139,10 @@ export async function loadReviewThreadSummariesForDashboard(
     let targetLabel = "Thread";
     if (rt.alertPublicId) {
       const pid = alertPublic.has(String(rt.alertPublicId)) ? String(rt.alertPublicId) : "—";
-      targetHref = `/alerts/${pid}?thread=${encodeURIComponent(rt.id)}`;
+      targetHref = `/alerts/${pid}`;
       targetLabel = `Alert ${pid}`;
     } else if (rt.profileUserId) {
-      targetHref = `/users/${rt.profileUserId}?thread=${encodeURIComponent(rt.id)}`;
+      targetHref = `/users/${rt.profileUserId}`;
       targetLabel = `User ${rt.profileUserId}`;
     }
     const dec = decMap.get(rt.id);

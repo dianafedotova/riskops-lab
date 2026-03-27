@@ -5,6 +5,7 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { canSeeStaffActionControls } from "@/lib/permissions/checks";
 import { TABLE_PY } from "@/lib/table-padding";
 import { createClient } from "@/lib/supabase";
 import type { AlertRow } from "@/lib/types";
@@ -21,8 +22,7 @@ const ALERT_LIST_COLS =
 
 export default function AlertsPage() {
   const { appUser } = useCurrentUser();
-  const isAdmin = appUser?.role === "admin";
-  const supabase = createClient();
+  const canViewStaffActions = canSeeStaffActionControls(appUser?.role);
   const router = useRouter();
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +38,7 @@ export default function AlertsPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const supabase = createClient();
       setLoading(true);
       setError(null);
       const { data, error: qError } = await supabase
@@ -58,10 +59,6 @@ export default function AlertsPage() {
       cancelled = true;
     };
   }, [reloadTick]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [query, typeFilter, severityFilter, statusFilter, itemsPerPage]);
 
   const hint = (
     <div className="space-y-1 text-xs text-rose-800/90">
@@ -165,7 +162,7 @@ export default function AlertsPage() {
       <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="heading-page">Alerts</h1>
-        {isAdmin ? (
+        {canViewStaffActions ? (
           <button
             type="button"
             className="min-h-11 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 sm:min-h-0 sm:px-3 sm:py-1.5"
@@ -190,7 +187,10 @@ export default function AlertsPage() {
             type="text"
             placeholder="Search by Alert ID or User ID..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
             className="h-10 w-full min-w-0 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-colors duration-150 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
           />
         </div>
@@ -202,7 +202,10 @@ export default function AlertsPage() {
             <select
               id="alerts-type-filter"
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as "all" | "fraud" | "aml")}
+              onChange={(e) => {
+                setTypeFilter(e.target.value as "all" | "fraud" | "aml");
+                setPage(1);
+              }}
               className="h-10 min-w-[5.5rem] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
             >
               <option value="all">All</option>
@@ -218,7 +221,10 @@ export default function AlertsPage() {
             <select
               id="alerts-severity-filter"
               value={severityFilter}
-              onChange={(e) => setSeverityFilter(e.target.value)}
+              onChange={(e) => {
+                setSeverityFilter(e.target.value);
+                setPage(1);
+              }}
               className="h-10 min-w-[5.5rem] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
             >
               <option value="all">All</option>
@@ -236,7 +242,10 @@ export default function AlertsPage() {
             <select
               id="alerts-status-filter"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
               className="h-10 min-w-[5.5rem] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
             >
               <option value="all">All</option>
@@ -349,7 +358,10 @@ export default function AlertsPage() {
           <select
             id="alerts-per-page"
             value={itemsPerPage}
-            onChange={(e) => setItemsPerPage(Number(e.target.value))}
+            onChange={(e) => {
+              setItemsPerPage(Number(e.target.value));
+              setPage(1);
+            }}
             className="rounded-md bg-slate-100 px-2 py-1 shadow-sm"
           >
             <option>10</option>

@@ -1,4 +1,5 @@
-import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
+import { getCurrentAppUser } from "@/lib/auth/current-app-user";
+import { canAccessAdminRoute } from "@/lib/permissions/checks";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -64,9 +65,7 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { authUser: user, appUser, error: currentUserErr } = await getCurrentAppUser(supabase);
 
   if (isAuthPath) {
     if (!user || path === "/forgot-password" || path === "/reset-password" || path === "/auth/callback") {
@@ -74,11 +73,10 @@ export async function proxy(request: NextRequest) {
     }
 
     if (path === "/login" || path === "/sign-in" || path === "/signup") {
-      const { row: authAppUser, error: authFetchErr } = await fetchAppUserRow(supabase, user);
-      if (authFetchErr) {
+      if (currentUserErr) {
         return supabaseResponse;
       }
-      if (!authAppUser) {
+      if (!appUser) {
         if (path === "/signup") {
           return supabaseResponse;
         }
@@ -88,7 +86,7 @@ export async function proxy(request: NextRequest) {
         applyCookies(supabaseResponse, redirectRes);
         return redirectRes;
       }
-      if (authAppUser.is_active === false) {
+      if (appUser.is_active === false) {
         await supabase.auth.signOut();
         const inactiveUrl = new URL("/sign-in", request.url);
         inactiveUrl.searchParams.set("reason", "inactive");
@@ -118,14 +116,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const { row: appUser, error: protectedFetchErr } = await fetchAppUserRow(supabase, user);
-
-  if (protectedFetchErr) {
+  if (currentUserErr) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
     url.searchParams.set("next", path);
     url.searchParams.set("oauth", "error");
-    url.searchParams.set("message", protectedFetchErr.message.slice(0, 200));
+    url.searchParams.set("message", currentUserErr.message.slice(0, 200));
     const redirectRes = NextResponse.redirect(url);
     applyCookies(supabaseResponse, redirectRes);
     return redirectRes;
@@ -148,7 +144,7 @@ export async function proxy(request: NextRequest) {
     return redirectRes;
   }
 
-  if (path.startsWith("/admin") && appUser?.role !== "admin") {
+  if (path.startsWith("/admin") && !canAccessAdminRoute(appUser?.role)) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

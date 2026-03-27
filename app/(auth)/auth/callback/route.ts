@@ -1,4 +1,4 @@
-import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
+import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -70,15 +70,11 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { authUser, appUser: appUserRow, error: appUserErr } = await getCurrentAppUser(supabase);
 
-  if (!user) {
+  if (!authUser) {
     return redirectSignIn({ oauth: "no_session" });
   }
-
-  const { row: appUserRow, error: appUserErr } = await fetchAppUserRow(supabase, user);
 
   if (appUserErr) {
     await supabase.auth.signOut();

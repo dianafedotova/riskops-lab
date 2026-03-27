@@ -2,15 +2,16 @@
 
 import { formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { canSeeTraineeWorkspace } from "@/lib/permissions/checks";
 import { createClient } from "@/lib/supabase";
 import {
   loadReviewThreadSummariesForDashboard,
   type DashboardThreadSummary,
 } from "@/lib/dashboard-review-thread-summaries";
-import { resolveTraineeAssignmentAlertColumn } from "@/lib/trainee-alert-assignments";
+import { listAssignedAlertsForTrainee } from "@/lib/services/assignments";
+import { listWatchlistUsersForTrainee, removeSimulatorUserFromWatchlist } from "@/lib/services/watchlist";
 import {
   formatPostgrestError,
-  resolveTraineeWatchlistSimulatorColumn,
 } from "@/lib/trainee-user-watchlist";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -40,9 +41,10 @@ export default function DashboardPage() {
   const [traineeLoading, setTraineeLoading] = useState(false);
   const [traineeError, setTraineeError] = useState<string | null>(null);
   const [watchRemoveBusyId, setWatchRemoveBusyId] = useState<string | null>(null);
+  const canViewTraineeWorkspace = canSeeTraineeWorkspace(appUser?.role);
 
   const loadTraineeSections = useCallback(async () => {
-    if (!appUser || appUser.role !== "user") {
+    if (!appUser || !canViewTraineeWorkspace) {
       setMyAlerts([]);
       setWatchedUsers([]);
       setThreadSummaries([]);
@@ -55,53 +57,18 @@ export default function DashboardPage() {
 
     try {
       try {
-        const alertCol = await resolveTraineeAssignmentAlertColumn(supabase);
-        const { data: assigns, error: aErr } = await supabase
-          .from("trainee_alert_assignments")
-          .select(`${alertCol}, created_at`)
-          .eq("app_user_id", appUser.id)
-          .order("created_at", { ascending: false });
-        if (aErr) throw aErr;
-        const assignIds = (assigns ?? [])
-          .map((r) => (r as Record<string, string>)[alertCol])
-          .filter(Boolean);
-        if (assignIds.length === 0) {
-          setMyAlerts([]);
-        } else {
-          const alertsFilterCol = alertCol === "alert_internal_id" ? "internal_id" : "id";
-          const { data: alerts, error: alErr } = await supabase
-            .from("alerts")
-            .select("id, user_id, status, severity, alert_type, created_at")
-            .in(alertsFilterCol, assignIds);
-          if (alErr) throw alErr;
-          setMyAlerts((alerts as MyAlertRow[]) ?? []);
-        }
+        const { alerts, error } = await listAssignedAlertsForTrainee(supabase, appUser.id);
+        if (error) throw error;
+        setMyAlerts(alerts as MyAlertRow[]);
       } catch (e) {
         sectionErrors.push(`My alerts: ${formatPostgrestError(e)}`);
         setMyAlerts([]);
       }
 
       try {
-        const simCol = await resolveTraineeWatchlistSimulatorColumn(supabase);
-        const { data: watches, error: wErr } = await supabase
-          .from("trainee_user_watchlist")
-          .select(`${simCol}, created_at`)
-          .eq("app_user_id", appUser.id)
-          .order("created_at", { ascending: false });
-        if (wErr) throw wErr;
-        const simIds = (watches ?? [])
-          .map((r) => (r as Record<string, string>)[simCol])
-          .filter(Boolean);
-        if (simIds.length === 0) {
-          setWatchedUsers([]);
-        } else {
-          const { data: users, error: uErr } = await supabase
-            .from("users")
-            .select("id, full_name, email")
-            .in("id", simIds);
-          if (uErr) throw uErr;
-          setWatchedUsers((users as WatchedUserRow[]) ?? []);
-        }
+        const { users, error } = await listWatchlistUsersForTrainee(supabase, appUser.id);
+        if (error) throw error;
+        setWatchedUsers(users as WatchedUserRow[]);
       } catch (e) {
         sectionErrors.push(`Watched users: ${formatPostgrestError(e)}`);
         setWatchedUsers([]);
@@ -124,18 +91,15 @@ export default function DashboardPage() {
     } finally {
       setTraineeLoading(false);
     }
-  }, [appUser]);
+  }, [appUser, canViewTraineeWorkspace]);
 
   const removeSimulatorFromWatchlist = useCallback(async (simulatorUserId: string) => {
-    if (!appUser || appUser.role !== "user") return;
+    if (!appUser || !canViewTraineeWorkspace) return;
     setWatchRemoveBusyId(simulatorUserId);
     setTraineeError(null);
     try {
       const supabase = createClient();
-      const simCol = await resolveTraineeWatchlistSimulatorColumn(supabase);
-      let dq = supabase.from("trainee_user_watchlist").delete().eq("app_user_id", appUser.id);
-      dq = dq.eq(simCol, simulatorUserId);
-      const { error } = await dq;
+      const { error } = await removeSimulatorUserFromWatchlist(supabase, appUser.id, simulatorUserId);
       if (error) throw error;
       setWatchedUsers((prev) => prev.filter((row) => row.id !== simulatorUserId));
     } catch (e) {
@@ -143,11 +107,12 @@ export default function DashboardPage() {
     } finally {
       setWatchRemoveBusyId(null);
     }
-  }, [appUser]);
+  }, [appUser, canViewTraineeWorkspace]);
 
   useEffect(() => {
+    if (userLoading) return;
     void loadTraineeSections();
-  }, [loadTraineeSections]);
+  }, [userLoading, loadTraineeSections]);
 
   const metricCards = [
     { title: "Open Fraud Alerts", value: "24" },
@@ -184,7 +149,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {appUser?.role === "user" ? (
+        {canViewTraineeWorkspace ? (
           <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-slate-900">My workspace</h2>
             {traineeError ? <p className="text-sm text-rose-600">{traineeError}</p> : null}

@@ -3,25 +3,37 @@
 import { ageFromIsoDate, formatDate, formatDateTime, formatEventType, formatMoneyUsd, formatTransactionAmount, maskIp } from "@/lib/format";
 import { getOpsEventLabel } from "@/lib/ops-events";
 import { SimulatorCommentsPanel } from "@/components/simulator-comments-panel";
-import { useTraineeDecisions } from "@/lib/hooks/use-trainee-decisions";
+import { useReviewWorkspaceActor } from "@/lib/hooks/use-review-workspace-actor";
 import { ensureUserReviewThread } from "@/lib/review/ensure-thread";
 import { fetchReviewThreadIdForProfile } from "@/lib/review/fetch-review-thread-id";
 import { createClient } from "@/lib/supabase";
-import type { AlertRow, OpsEventRow, PaymentMethodRow, TransactionRow, UserEventRow, UserFinancialsRow, UserNoteRow, UserRow } from "@/lib/types";
+import type {
+  AlertRow,
+  InternalNoteRow,
+  OpsEventRow,
+  PaymentMethodRow,
+  TransactionRow,
+  UserEventRow,
+  UserFinancialsRow,
+  UserRow,
+} from "@/lib/types";
 import Image from "next/image";
 import Link from "next/link";
 import { QueryErrorBanner } from "@/components/query-error";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { UserProfileSkeleton } from "@/components/user-profile-skeleton";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { listInternalNotesForSimulatorUser } from "@/lib/services/internal-notes";
 import { TABLE_PY_INNER } from "@/lib/table-padding";
 import { normalizeFinancialsRow } from "@/lib/user-financials";
 import {
-  buildTraineeWatchlistInsertRow,
+  addSimulatorUserToWatchlist,
+  isSimulatorUserWatchedByTrainee,
+  removeSimulatorUserFromWatchlist,
+} from "@/lib/services/watchlist";
+import {
   formatPostgrestError,
-  resolveTraineeWatchlistSimulatorColumn,
 } from "@/lib/trainee-user-watchlist";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type TabKey =
@@ -33,35 +45,6 @@ type TabKey =
   | "opslog"
   | "alerts"
   | "notes";
-
-type TraineeDecisionChoice = "false_positive" | "true_positive" | "info_requested" | "escalated";
-
-function proposedStatusForUserDecision(decision: TraineeDecisionChoice): string {
-  if (decision === "false_positive") return "closed";
-  if (decision === "true_positive") return "escalated";
-  if (decision === "info_requested") return "open";
-  return "escalated";
-}
-
-function getTraineeDecisionLabel(decision: string | null | undefined): string {
-  const d = (decision ?? "").trim();
-  if (!d) return "Not set";
-  if (d === "false_positive") return "False Positive";
-  if (d === "true_positive") return "True Positive";
-  if (d === "info_requested") return "Info requested";
-  if (d === "escalated") return "Escalated";
-  return d;
-}
-
-function traineeDecisionBadgeClass(decision: string | null | undefined): string {
-  const d = (decision ?? "").trim();
-  if (!d) return "bg-slate-200 text-slate-600";
-  if (d === "false_positive") return "bg-emerald-100 text-emerald-700";
-  if (d === "true_positive") return "bg-rose-100 text-rose-700";
-  if (d === "info_requested") return "bg-slate-100 text-slate-600";
-  if (d === "escalated") return "bg-amber-100 text-amber-700";
-  return "bg-slate-200 text-slate-600";
-}
 
 type AccountStatus = "active" | "not_active" | "restricted" | "blocked" | "closed";
 
@@ -303,17 +286,14 @@ function SimulatorAccountActionButtons({
 }
 
 export default function UserProfilePage() {
-  const supabase = createClient();
-  const searchParams = useSearchParams();
-  const threadParam = searchParams.get("thread");
-  const { appUser } = useCurrentUser();
+  const { appUser, hasStaffAccess, isTraineeActor } = useReviewWorkspaceActor();
   const params = useParams<{ id: string }>();
   const userId = params?.id ?? "";
   const [activeTab, setActiveTab] = useState<TabKey>("transactions");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
-  const [predefinedNotes, setPredefinedNotes] = useState<UserNoteRow[]>([]);
+  const [predefinedNotes, setPredefinedNotes] = useState<InternalNoteRow[]>([]);
 
   const [user, setUser] = useState<UserRow | null>(null);
   const [userAlerts, setUserAlerts] = useState<AlertRow[]>([]);
@@ -328,29 +308,16 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
-  const [selfieLoadFailed, setSelfieLoadFailed] = useState(false);
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
+  const [failedSelfieUrl, setFailedSelfieUrl] = useState<string | null>(null);
 
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [threadCheckDone, setThreadCheckDone] = useState(false);
   const [isWatching, setIsWatching] = useState(false);
   const [watchBusy, setWatchBusy] = useState(false);
-  const [pendingDecision, setPendingDecision] = useState<TraineeDecisionChoice | null>(null);
-  const [rationale, setRationale] = useState("");
-  const [submitBusy, setSubmitBusy] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [watchError, setWatchError] = useState<string | null>(null);
 
   const [notesTabThreadId, setNotesTabThreadId] = useState<string | null>(null);
   const [notesTabThreadError, setNotesTabThreadError] = useState<string | null>(null);
   const [internalNotesLoadError, setInternalNotesLoadError] = useState<string | null>(null);
-
-  const reviewMode = Boolean(activeThreadId);
-  const { decisions, loading: decisionsLoading, submitDecision } = useTraineeDecisions(reviewMode ? activeThreadId : null);
-
-  useEffect(() => {
-    setSelfieLoadFailed(false);
-    setSelfieUrl(null);
-  }, [user?.id, user?.selfie_path]);
 
   useEffect(() => {
     if (!user?.selfie_path) {
@@ -359,6 +326,7 @@ export default function UserProfilePage() {
     }
     let cancelled = false;
     (async () => {
+      const supabase = createClient();
       const { data, error } = await supabase.storage
         .from("selfie")
         .createSignedUrl(user.selfie_path!, 3600);
@@ -373,11 +341,12 @@ export default function UserProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, user?.selfie_path]);
+  }, [user?.selfie_path]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const supabase = createClient();
       setLoading(true);
       setError(null);
       setTxError(null);
@@ -477,61 +446,10 @@ export default function UserProfilePage() {
       }
       if (!cancelled) setPaymentMethods(((pmRes.data as PaymentMethodRow[]) ?? []) as UiPaymentMethod[]);
       if (!cancelled) setOpsEvents((opsRes.data as OpsEventRow[]) ?? []);
-      // internal_notes: column `text` is a PostgREST reserved token — must be selected as "text".
-      type RawNote = {
-        id: string;
-        user_id: string;
-        note_text?: string | null;
-        text?: string | null;
-        created_at: string;
-        created_by: string | null;
-      };
-      const mapRawNotes = (rows: RawNote[]): UserNoteRow[] =>
-        rows.map((r) => {
-          const body = (r.note_text ?? r.text ?? "").trim();
-          return {
-            id: r.id,
-            user_id: r.user_id,
-            note_text: body.length ? body : "—",
-            created_at: r.created_at,
-            created_by: r.created_by,
-          };
-        });
-      let notesData: UserNoteRow[] = [];
-      let notesLoadErr: string | null = null;
-      const noteSelectAttempts = [
-        'id, user_id, note_text, "text", created_at, created_by',
-        "id, user_id, note_text, created_at, created_by",
-        'id, user_id, "text", created_at, created_by',
-        "*",
-      ] as const;
-      const userIdsForNotes = Array.from(
-        new Set(
-          [canonicalUserId, canonicalUserId.trim(), canonicalUserId.trim().toLowerCase()].filter(
-            (id) => id.length > 0
-          )
-        )
+      const { notes: notesData, error: notesLoadErr } = await listInternalNotesForSimulatorUser(
+        supabase,
+        canonicalUserId
       );
-      outerNotes: for (const uid of userIdsForNotes) {
-        for (const cols of noteSelectAttempts) {
-          const { data, error } = await supabase
-            .from("internal_notes")
-            .select(cols)
-            .eq("user_id", uid)
-            .order("created_at", { ascending: false });
-          if (error) {
-            notesLoadErr = error.message;
-            continue;
-          }
-          const mapped = mapRawNotes(((data ?? []) as unknown) as RawNote[]);
-          notesLoadErr = null;
-          if (mapped.length > 0) {
-            notesData = mapped;
-            break outerNotes;
-          }
-          break;
-        }
-      }
       if (!cancelled) {
         setPredefinedNotes(notesData);
         setInternalNotesLoadError(notesLoadErr);
@@ -548,48 +466,6 @@ export default function UserProfilePage() {
     };
   }, [userId, reloadTick]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!threadParam || !user?.id) {
-      setActiveThreadId(null);
-      setThreadCheckDone(true);
-      return;
-    }
-    if (!appUser) {
-      setThreadCheckDone(false);
-      return;
-    }
-    setThreadCheckDone(false);
-    (async () => {
-      const { data: th, error: thErr } = await supabase
-        .from("review_threads")
-        .select("id, app_user_id, user_id, context_type")
-        .eq("id", threadParam)
-        .maybeSingle();
-      if (cancelled) return;
-      if (thErr || !th) {
-        setActiveThreadId(null);
-        setThreadCheckDone(true);
-        return;
-      }
-      if (th.context_type !== "profile" || String(th.user_id) !== user.id) {
-        setActiveThreadId(null);
-        setThreadCheckDone(true);
-        return;
-      }
-      if (appUser.role === "user" && th.app_user_id !== appUser.id) {
-        setActiveThreadId(null);
-        setThreadCheckDone(true);
-        return;
-      }
-      setActiveThreadId(String(th.id));
-      setThreadCheckDone(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [threadParam, user?.id, appUser, supabase]);
-
   /** Notes tab: resolve review_threads.id (thread-scoped simulator_comments). Trainees: own thread for this profile; admins: latest thread on profile. */
   useEffect(() => {
     if (activeTab !== "notes" || !user?.id || !appUser) {
@@ -597,12 +473,13 @@ export default function UserProfilePage() {
     }
     let cancelled = false;
     setNotesTabThreadError(null);
-    if (appUser.role !== "admin" && appUser.role !== "user") {
+    if (!hasStaffAccess && !isTraineeActor) {
       setNotesTabThreadId(null);
       return;
     }
     (async () => {
-      if (appUser.role === "user") {
+      const supabase = createClient();
+      if (isTraineeActor) {
         const { threadId, error: thErr } = await ensureUserReviewThread(supabase, appUser.id, user.id);
         if (cancelled) return;
         if (thErr || !threadId) {
@@ -625,29 +502,28 @@ export default function UserProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, appUser, user?.id, supabase]);
+  }, [activeTab, appUser, hasStaffAccess, isTraineeActor, user?.id]);
 
   useEffect(() => {
-    if (!appUser || appUser.role !== "user" || !user?.id) {
+    if (!appUser || !isTraineeActor || !user?.id) {
       setIsWatching(false);
       return;
     }
     let cancelled = false;
     (async () => {
-      const simCol = await resolveTraineeWatchlistSimulatorColumn(supabase);
+      const supabase = createClient();
+      const { watched, error } = await isSimulatorUserWatchedByTrainee(supabase, appUser.id, user.id);
       if (cancelled) return;
-      let q = supabase
-        .from("trainee_user_watchlist")
-        .select("id")
-        .eq("app_user_id", appUser.id);
-      q = q.eq(simCol, user.id);
-      const { data } = await q.maybeSingle();
-      if (!cancelled) setIsWatching(Boolean(data));
+      if (error) {
+        setIsWatching(false);
+        return;
+      }
+      setIsWatching(watched);
     })();
     return () => {
       cancelled = true;
     };
-  }, [appUser, user?.id, supabase]);
+  }, [appUser, isTraineeActor, user?.id]);
 
   const copyUserId = async () => {
     await navigator.clipboard.writeText(user?.id ?? "");
@@ -677,52 +553,26 @@ export default function UserProfilePage() {
   }, [dropdownOpen, closeDropdown]);
 
   const onToggleWatch = useCallback(async () => {
-    if (!appUser?.id || appUser.role !== "user" || !user?.id) return;
+    if (!appUser?.id || !isTraineeActor || !user?.id) return;
     setWatchBusy(true);
-    setSubmitError(null);
+    setWatchError(null);
     try {
-      const simCol = await resolveTraineeWatchlistSimulatorColumn(supabase);
+      const supabase = createClient();
       if (isWatching) {
-        let dq = supabase.from("trainee_user_watchlist").delete().eq("app_user_id", appUser.id);
-        dq = dq.eq(simCol, user.id);
-        const { error: delErr } = await dq;
+        const { error: delErr } = await removeSimulatorUserFromWatchlist(supabase, appUser.id, user.id);
         if (delErr) throw delErr;
         setIsWatching(false);
       } else {
-        const row = buildTraineeWatchlistInsertRow(appUser.id, user.id, simCol);
-        const { error: insErr } = await supabase.from("trainee_user_watchlist").insert(row);
-        if (insErr && (insErr as { code?: string }).code !== "23505") throw insErr;
+        const { error: insErr } = await addSimulatorUserToWatchlist(supabase, appUser.id, user.id);
+        if (insErr) throw insErr;
         setIsWatching(true);
       }
     } catch (e) {
-      setSubmitError(formatPostgrestError(e));
+      setWatchError(formatPostgrestError(e));
     } finally {
       setWatchBusy(false);
     }
-  }, [appUser?.id, appUser?.role, isWatching, supabase, user?.id]);
-
-  const onSubmitUserDecision = useCallback(async () => {
-    if (!appUser?.id || !pendingDecision || !activeThreadId || !user) return;
-    setSubmitBusy(true);
-    setSubmitError(null);
-    try {
-      await submitDecision({
-        appUserId: appUser.id,
-        alertId: null,
-        userId: user.id,
-        decision: pendingDecision,
-        proposedAlertStatus: proposedStatusForUserDecision(pendingDecision),
-        rationale: rationale.trim() || null,
-        reviewState: "submitted",
-      });
-      setRationale("");
-      setPendingDecision(null);
-    } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : "Submit failed");
-    } finally {
-      setSubmitBusy(false);
-    }
-  }, [activeThreadId, appUser?.id, pendingDecision, rationale, submitDecision, user]);
+  }, [appUser?.id, isTraineeActor, isWatching, user?.id]);
 
   if (loading) {
     return <UserProfileSkeleton />;
@@ -769,17 +619,6 @@ export default function UserProfilePage() {
   const displayName = user.full_name ?? user.email ?? "—";
   const age = ageFromIsoDate(user.date_of_birth);
   const countryLabel = user.country_name ?? "—";
-  const threadInvalid = Boolean(threadParam && threadCheckDone && !activeThreadId);
-
-  const riskClass =
-    riskLevel === "High"
-      ? "text-rose-600"
-      : riskLevel === "Medium"
-        ? "text-amber-600"
-        : riskLevel === "Low"
-          ? "text-emerald-600"
-          : "text-slate-700";
-
   const userCards = paymentMethods.filter((m) => m.type?.toLowerCase().includes("card"));
   const userBankAccounts = paymentMethods.filter(
     (m) =>
@@ -962,127 +801,23 @@ export default function UserProfilePage() {
         / <span className="text-slate-700">{displayName}</span>
       </nav>
 
-      {threadInvalid ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          This review link is invalid or you do not have access.{" "}
-          <Link href={`/users/${user.id}`} className="font-medium text-[#264B5A] underline">
-            View canonical profile
-          </Link>
-        </p>
-      ) : null}
-
-      {reviewMode ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
-          <h2 className="heading-section mb-2">Review workspace</h2>
-          <p className="mb-3 text-xs text-slate-600">
-            Profile review notes and decisions are training-only and do not change simulator user records.
-          </p>
-          {decisionsLoading ? (
-            <p className="text-xs text-slate-500">Loading decisions…</p>
-          ) : decisions.length > 0 ? (
-            <ul className="mb-4 space-y-2 text-sm">
-              {decisions.map((d) => (
-                <li key={d.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="mb-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                    <span className="tabular-nums">{formatDateTime(d.created_at)}</span>
-                    {d.proposed_alert_status ? <span>Proposed: {d.proposed_alert_status}</span> : null}
-                  </div>
-                  <p className="mb-1">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${traineeDecisionBadgeClass(d.decision)}`}
-                    >
-                      {getTraineeDecisionLabel(d.decision)}
-                    </span>
-                  </p>
-                  {d.rationale ? <p className="whitespace-pre-wrap text-slate-700">{d.rationale}</p> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mb-4 text-xs text-slate-500">No decisions in this thread yet.</p>
-          )}
-
-          {appUser?.role === "user" ? (
-            <div className="space-y-3 border-t border-slate-200 pt-3">
-              <p className="text-xs font-medium text-slate-700">Submit a new decision (append-only)</p>
-              <textarea
-                value={rationale}
-                onChange={(e) => setRationale(e.target.value)}
-                rows={3}
-                placeholder="Rationale (optional)"
-                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-              />
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {(
-                  [
-                    ["info_requested", "Info requested"],
-                    ["escalated", "Escalated"],
-                    ["false_positive", "False Positive"],
-                    ["true_positive", "True Positive"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setPendingDecision(key)}
-                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                      pendingDecision === key
-                        ? "border-slate-500 bg-slate-100 text-slate-900"
-                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50/80"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                disabled={!pendingDecision || submitBusy}
-                onClick={() => void onSubmitUserDecision()}
-                className="rounded-lg bg-[#264B5A] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {submitBusy ? "Submitting…" : "Submit decision"}
-              </button>
-              {submitError ? <p className="text-xs text-rose-600">{submitError}</p> : null}
-            </div>
-          ) : null}
-
-          <div className="mt-4 border-t border-slate-200 pt-4">
-            <SimulatorCommentsPanel
-              threadId={activeThreadId}
-              reviewMode
-              privateAlertInternalId={null}
-              privateSimulatorUserId={user.id}
-              predefinedNotes={predefinedNotes.map((n) => ({
-                id: n.id,
-                note_text: n.note_text,
-                created_at: n.created_at,
-                created_by: n.created_by,
-              }))}
-              title="Canonical notes & training thread"
-              showTitle
-              withTopBorder={false}
-              emptyMessage="No thread messages yet."
-              adminModeOverride={appUser?.role === "admin" ? "reply" : undefined}
-            />
-          </div>
-        </div>
-      ) : null}
-
       <div
         className={`flex min-w-0 flex-row items-start gap-4 overflow-hidden rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 px-4 py-3 shadow-sm sm:overflow-visible sm:p-5 ${
-          appUser?.role === "user" ? "" : "sm:items-center"
+          isTraineeActor ? "" : "sm:items-center"
         }`}
       >
         <div className="shrink-0 sm:self-center">
           <div className="relative h-12 w-12 overflow-hidden rounded-full border border-slate-300 bg-slate-200 shadow-sm sm:h-[7.5rem] sm:w-[7.5rem]">
-          {selfieUrl && !selfieLoadFailed ? (
-            <img
+          {selfieUrl && failedSelfieUrl !== selfieUrl ? (
+            <Image
               src={selfieUrl}
               alt=""
+              unoptimized
+              fill
+              sizes="120px"
               role="presentation"
-              onError={() => setSelfieLoadFailed(true)}
-              className="h-full w-full object-cover"
+              onError={() => setFailedSelfieUrl(selfieUrl)}
+              className="object-cover"
             />
           ) : (
             <Image
@@ -1145,7 +880,7 @@ export default function UserProfilePage() {
                   </p>
                 </div>
               </div>
-              {appUser?.role !== "user" ? (
+              {!isTraineeActor ? (
                 <div className="flex w-full basis-full shrink-0 flex-wrap items-center gap-1.5 sm:hidden">
                   <SimulatorAccountActionButtons
                     accountStatus={accountStatus}
@@ -1187,7 +922,7 @@ export default function UserProfilePage() {
                   </div>
                 </div>
               </div>
-              {appUser?.role !== "user" ? (
+              {!isTraineeActor ? (
                 <div className="flex min-w-0 shrink-0 flex-wrap items-end justify-end gap-1.5">
                   <SimulatorAccountActionButtons
                     accountStatus={accountStatus}
@@ -1202,9 +937,9 @@ export default function UserProfilePage() {
               ) : null}
             </div>
           </div>
-        {appUser?.role === "user" ? (
+        {isTraineeActor ? (
           <div className="flex w-[min(100%,12.5rem)] shrink-0 flex-col items-end justify-between gap-2 self-stretch sm:w-auto sm:max-w-[min(100%,20rem)]">
-            {!reviewMode ? (
+            <div className="flex w-full flex-col items-end gap-1">
               <button
                 type="button"
                 disabled={watchBusy}
@@ -1213,14 +948,8 @@ export default function UserProfilePage() {
               >
                 {watchBusy ? "…" : isWatching ? "Unwatch" : "Watch user"}
               </button>
-            ) : (
-              <Link
-                href={`/users/${user.id}`}
-                className="max-w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-[10px] font-medium leading-snug text-slate-700 shadow-sm hover:bg-slate-50 sm:max-w-[12rem] sm:px-2.5 sm:text-[11px]"
-              >
-                Back to canonical view
-              </Link>
-            )}
+              {watchError ? <p className="max-w-[12rem] text-right text-[10px] text-rose-600">{watchError}</p> : null}
+            </div>
             <SimulatorAccountActionButtons
               accountStatus={accountStatus}
               canOperate={canOperate}
@@ -1864,7 +1593,7 @@ export default function UserProfilePage() {
                     </p>
                   ) : null}
                   <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/80 to-slate-100/80 p-4 shadow-sm">
-                    {appUser?.role === "admin" ? (
+                    {hasStaffAccess ? (
                       <>
                         <SimulatorCommentsPanel
                           privateSimulatorUserId={user.id}
@@ -1879,7 +1608,7 @@ export default function UserProfilePage() {
                     ) : null}
                     {notesTabThreadError ? <p className="mb-2 text-sm text-rose-600">{notesTabThreadError}</p> : null}
                     <SimulatorCommentsPanel
-                      threadId={activeThreadId ?? notesTabThreadId}
+                      threadId={notesTabThreadId}
                       reviewMode
                       privateAlertInternalId={null}
                       privateSimulatorUserId={null}
@@ -1889,7 +1618,7 @@ export default function UserProfilePage() {
                         created_at: n.created_at,
                         created_by: n.created_by,
                       }))}
-                      adminModeOverride={appUser?.role === "admin" ? "reply" : undefined}
+                      adminModeOverride={hasStaffAccess ? "reply" : undefined}
                       showTitle={false}
                       withTopBorder={false}
                       emptyMessage="No notes in this workspace yet."

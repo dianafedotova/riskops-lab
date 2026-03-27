@@ -1,7 +1,7 @@
 "use client";
 
 import { runSerializedAuth } from "@/lib/auth/auth-user-queue";
-import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
+import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { createClient } from "@/lib/supabase";
 import type { AppUserRow } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
@@ -25,28 +25,10 @@ export function useCurrentUser(initialSession?: CurrentUserInitialSession) {
     try {
       await runSerializedAuth(async () => {
         const supabase = createClient();
-        const {
-          data: { user },
-          error: authErr,
-        } = await supabase.auth.getUser();
-        if (authErr) {
-          setError(authErr.message);
-          setAuthUser(null);
-          setAppUser(null);
-          return;
-        }
-        setAuthUser(user);
-        if (!user) {
-          setAppUser(null);
-          return;
-        }
-        const { row, error: appErr } = await fetchAppUserRow(supabase, user);
-        if (appErr) {
-          setError(appErr.message);
-          setAppUser(null);
-        } else {
-          setAppUser(row);
-        }
+        const ctx = await getCurrentAppUser(supabase);
+        setAuthUser(ctx.authUser);
+        setAppUser(ctx.appUser);
+        if (ctx.error) setError(ctx.error.message);
       });
     } finally {
       if (showLoading) setLoading(false);

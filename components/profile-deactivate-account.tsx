@@ -1,5 +1,6 @@
 "use client";
 
+import { canDeactivateOwnAccount } from "@/lib/permissions/checks";
 import { createClient } from "@/lib/supabase";
 import type { AppUserRow } from "@/lib/types";
 import { useRouter } from "next/navigation";
@@ -32,19 +33,21 @@ export function ProfileDeactivateAccount({ appUser }: ProfileDeactivateAccountPr
   }, [open, close]);
 
   if (!appUser) return null;
-  if (appUser.role === "admin") return null;
+  if (!canDeactivateOwnAccount(appUser.role)) return null;
+  const currentAppUser = appUser;
 
   async function deactivate() {
     setError(null);
     setBusy(true);
     try {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not signed in");
+      const authUserId = currentAppUser.auth_user_id?.trim();
+      if (!authUserId) throw new Error("Profile auth identity is missing");
 
-      const { error: upErr } = await supabase.from("app_users").update({ is_active: false }).eq("auth_user_id", user.id);
+      const { error: upErr } = await supabase
+        .from("app_users")
+        .update({ is_active: false })
+        .eq("auth_user_id", authUserId);
 
       if (upErr) throw upErr;
 

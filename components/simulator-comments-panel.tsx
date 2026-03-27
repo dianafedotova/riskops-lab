@@ -1,8 +1,10 @@
 "use client";
 
+import { canAccessStaffFeatures, isTrainee } from "@/lib/app-user-role";
 import { formatDateTime } from "@/lib/format";
 import { useCurrentUser } from "@/lib/hooks/use-current-user";
 import { useSimulatorComments } from "@/lib/hooks/use-simulator-comments";
+import { canCreatePrivateNotes, canReplyAsQA, canViewPrivateNotes, canWriteTraineeDiscussion } from "@/lib/permissions/checks";
 import { createClient } from "@/lib/supabase";
 import type { SimulatorCommentRow } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -76,8 +78,18 @@ export function SimulatorCommentsPanel({
   const { appUser, loading: sessionLoading } = useCurrentUser();
   const [adminMode, setAdminMode] = useState<"reply" | "private">(adminModeOverride ?? "reply");
   const hasPrivateTarget = Boolean(privateAlertInternalId || privateSimulatorUserId);
-  const includeAdminPrivate = appUser?.role === "admin" && adminMode === "private";
-  const { comments, loading, error, addUserComment, addUserReply, updateUserRootComment, addAdminPrivateComment, addAdminQaReply } =
+  const includeAdminPrivate = canViewPrivateNotes(appUser?.role) && adminMode === "private";
+  const {
+    discussionComments,
+    privateNotes,
+    loading,
+    error,
+    addUserComment,
+    addUserReply,
+    updateUserRootComment,
+    addAdminPrivateComment,
+    addAdminQaReply,
+  } =
     useSimulatorComments({
       threadId,
       reviewMode: Boolean(threadId && reviewMode),
@@ -107,37 +119,33 @@ export function SimulatorCommentsPanel({
   }, [predefinedNotes]);
 
   const topLevelComments = useMemo(() => {
-    return comments
-      .filter((c) => c.comment_type !== "admin_private" && c.parent_comment_id == null && c.comment_type === "user_comment")
+    return discussionComments
+      .filter((c) => c.parent_comment_id == null && c.comment_type === "user_comment")
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [comments]);
+  }, [discussionComments]);
 
   const adminPrivateNotes = useMemo(() => {
-    if (appUser?.role !== "admin") return [];
-    return comments
-      .filter((c) => c.comment_type === "admin_private" && c.author_app_user_id === appUser.id)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [comments, appUser?.id, appUser?.role]);
+    return [...privateNotes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [privateNotes]);
 
   const activeAdminThreadRootId = useMemo(() => {
-    if (appUser?.role !== "admin") return null;
+    if (!canAccessStaffFeatures(appUser?.role)) return null;
     return topLevelComments[0]?.id ?? null;
   }, [appUser?.role, topLevelComments]);
 
   const canEditTraineeRoot = useCallback(
     (c: SimulatorCommentRow) => {
-      if (appUser?.role !== "user" || appUser.id !== c.author_app_user_id) return false;
+      if (!appUser || !isTrainee(appUser.role) || appUser.id !== c.author_app_user_id) return false;
       if (c.comment_type !== "user_comment" || c.parent_comment_id != null) return false;
       if (Date.now() - new Date(c.created_at).getTime() >= TRAINEE_ROOT_EDIT_MS) return false;
-      return !subtreeHasAdminQa(c.id, comments);
+      return !subtreeHasAdminQa(c.id, discussionComments);
     },
-    [appUser?.id, appUser?.role, comments]
+    [appUser, discussionComments]
   );
 
   const repliesByParent = useMemo(() => {
-    const map: Record<string, typeof comments> = {};
-    for (const c of comments) {
-      if (c.comment_type === "admin_private") continue;
+    const map: Record<string, typeof discussionComments> = {};
+    for (const c of discussionComments) {
       if (!c.parent_comment_id) continue;
       if (!map[c.parent_comment_id]) map[c.parent_comment_id] = [];
       map[c.parent_comment_id].push(c);
@@ -146,23 +154,23 @@ export function SimulatorCommentsPanel({
       map[parentId].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     }
     return map;
-  }, [comments]);
+  }, [discussionComments]);
 
   const hasVisibleItems =
-    appUser?.role === "admin"
+    canViewPrivateNotes(appUser?.role)
       ? adminMode === "private"
         ? adminPrivateNotes.length > 0
         : predefinedItems.length > 0 || topLevelComments.length > 0
       : predefinedItems.length > 0 || topLevelComments.length > 0;
   const hasUserThreads = topLevelComments.length > 0;
   const showAdminThreadHint =
-    appUser?.role === "admin" &&
+    canReplyAsQA(appUser?.role) &&
     adminMode === "reply" &&
     !threadId &&
     !hasUserThreads;
 
   useEffect(() => {
-    if (appUser?.role !== "admin") return;
+    if (!canViewPrivateNotes(appUser?.role)) return;
     if (adminModeOverride) {
       setAdminMode(adminModeOverride);
       return;
@@ -175,7 +183,9 @@ export function SimulatorCommentsPanel({
   }, [appUser?.role, threadId, adminModeOverride]);
 
   useEffect(() => {
-    const authorIds = Array.from(new Set(comments.map((c) => c.author_app_user_id).filter(Boolean)));
+    const authorIds = Array.from(
+      new Set([...discussionComments, ...privateNotes].map((c) => c.author_app_user_id).filter(Boolean))
+    );
     if (authorIds.length === 0) {
       setAuthorLabels({});
       return;
@@ -209,13 +219,13 @@ export function SimulatorCommentsPanel({
     return () => {
       cancelled = true;
     };
-  }, [comments]);
+  }, [discussionComments, privateNotes]);
 
   const onAddTrainee = useCallback(async () => {
     if (!body.trim() || !appUser?.id) return;
     setActionError(null);
     try {
-      if (appUser.role === "admin") {
+      if (canViewPrivateNotes(appUser.role)) {
         if (adminMode === "private") {
           await addAdminPrivateComment(body, appUser.id);
         } else {
@@ -269,7 +279,7 @@ export function SimulatorCommentsPanel({
         <p className="text-xs text-slate-500">Sign in to add or view comments.</p>
       ) : (
         <div className="space-y-2">
-          {appUser.role === "admin" && !adminModeOverride ? (
+          {canViewPrivateNotes(appUser.role) && !adminModeOverride ? (
             <div className="flex gap-2">
               {hasUserThreads ? (
                 <button
@@ -297,7 +307,7 @@ export function SimulatorCommentsPanel({
               </button>
             </div>
           ) : null}
-          {appUser.role !== "admin" || adminMode === "private" ? (
+          {canWriteTraineeDiscussion(appUser.role) || adminMode === "private" ? (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 value={body}
@@ -309,7 +319,7 @@ export function SimulatorCommentsPanel({
                   void onAddTrainee();
                 }}
                 placeholder={
-                  appUser.role === "admin"
+                  canCreatePrivateNotes(appUser.role)
                     ? "Add admin note..."
                     : "Add note..."
                 }
@@ -334,8 +344,8 @@ export function SimulatorCommentsPanel({
         <p className="text-xs text-slate-500">Loading comments…</p>
       ) : !hasVisibleItems ? (
         <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
-          {appUser?.role === "admin" && !threadId && adminMode === "reply"
-            ? "Open a review thread from the Admin panel or add ?thread= on a case page."
+          {canReplyAsQA(appUser?.role) && !threadId && adminMode === "reply"
+            ? "Open Internal Notes on the case page to use the training thread."
             : emptyMessage}
         </div>
       ) : (
@@ -345,7 +355,7 @@ export function SimulatorCommentsPanel({
               Open a comment thread from Admin panel to view notes for a specific user.
             </li>
           ) : null}
-          {(appUser?.role !== "admin" || adminMode === "reply") &&
+          {(!canViewPrivateNotes(appUser?.role) || adminMode === "reply") &&
             predefinedItems.map((item) => (
             <li
               key={item.key}
@@ -358,7 +368,7 @@ export function SimulatorCommentsPanel({
               <p className="whitespace-pre-wrap text-slate-900">{item.text}</p>
             </li>
           ))}
-          {appUser?.role === "admin" && adminMode === "private"
+          {canViewPrivateNotes(appUser?.role) && adminMode === "private"
             ? adminPrivateNotes.map((note) => (
             <li
               key={note.id}
@@ -372,7 +382,7 @@ export function SimulatorCommentsPanel({
             </li>
           ))
             : null}
-          {(appUser?.role !== "admin" || adminMode === "reply") &&
+          {(!canViewPrivateNotes(appUser?.role) || adminMode === "reply") &&
             topLevelComments.map((item) => (
             <li
               key={item.id}
@@ -427,7 +437,7 @@ export function SimulatorCommentsPanel({
               ) : (
                 <p className="whitespace-pre-wrap text-slate-900">{item.body}</p>
               )}
-              {appUser?.role === "user" && canEditTraineeRoot(item) && editingRootId !== item.id ? (
+              {isTrainee(appUser?.role) && canEditTraineeRoot(item) && editingRootId !== item.id ? (
                 <button
                   type="button"
                   className="mt-1 text-xs text-[#264B5A] underline"
@@ -439,7 +449,7 @@ export function SimulatorCommentsPanel({
                   Edit (5 min, until admin replies)
                 </button>
               ) : null}
-              {appUser?.role === "admin" && item.comment_type === "user_comment" ? (
+              {canReplyAsQA(appUser?.role) && item.comment_type === "user_comment" ? (
                 <div className="mt-2">
                   {replyTo === item.id ? (
                     <div className="flex flex-col gap-1">
@@ -481,7 +491,7 @@ export function SimulatorCommentsPanel({
                   )}
                 </div>
               ) : null}
-              {appUser?.role === "user" && item.comment_type === "user_comment" ? (
+              {isTrainee(appUser?.role) && item.comment_type === "user_comment" ? (
                 <div className="mt-2">
                   {replyTo === item.id ? (
                     <div className="flex flex-col gap-1">

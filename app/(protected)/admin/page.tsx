@@ -1,224 +1,61 @@
 "use client";
 
-import { formatDateTime } from "@/lib/format";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { useReviewWorkspaceActor } from "@/lib/hooks/use-review-workspace-actor";
+import { listAdminConsoleThreads, type AdminConsoleThreadListItem } from "@/lib/services/admin-review-console";
+import { addStaffQaReply } from "@/lib/services/comments";
 import { createClient } from "@/lib/supabase";
-import type { UserRow } from "@/lib/types";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-const THREAD_COLS = "id, app_user_id, alert_id, user_id, context_type, created_at" as const;
-
-type ReviewThreadListRow = {
-  id: string;
-  app_user_id: string;
-  alert_id: string | null;
-  user_id: string | null;
-  context_type: string | null;
-  created_at: string;
-};
-
-type ThreadListItem = {
-  threadId: string;
-  traineeLabel: string;
-  targetLabel: string;
-  targetHref: string;
-  qaParentId: string | null;
-  preview: string;
-  created_at: string;
-};
-
-type AdminAlertRow = {
-  id: string;
-  internal_id: string | null;
-  alert_type?: string | null;
-  type?: string | null;
-  severity: string | null;
-  user_id: string | null;
-};
-
 export default function AdminHomePage() {
-  const { appUser, loading: userLoading } = useCurrentUser();
-  const [threads, setThreads] = useState<ThreadListItem[]>([]);
+  const { appUser, loading: userLoading, canViewAdminPanel } = useReviewWorkspaceActor();
+  const [threads, setThreads] = useState<AdminConsoleThreadListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionOk, setActionOk] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
-  const isAdmin = appUser?.role === "admin";
+  useEffect(() => {
+    let cancelled = false;
 
-  const refreshThreads = useCallback(async () => {
-    if (!isAdmin) {
-      setThreads([]);
-      setLoading(false);
-      return;
-    }
-
-    const supabase = createClient();
-    setLoading(true);
-    setError(null);
-
-    const { data: threadRows, error: threadsErr } = await supabase
-      .from("review_threads")
-      .select(THREAD_COLS)
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    if (threadsErr) {
-      setError(threadsErr.message);
-      setThreads([]);
-      setLoading(false);
-      return;
-    }
-
-    const rows = (threadRows as ReviewThreadListRow[]) ?? [];
-    if (rows.length === 0) {
-      setThreads([]);
-      setLoading(false);
-      return;
-    }
-
-    const threadIds = rows.map((r) => r.id);
-    const traineeIds = Array.from(new Set(rows.map((r) => r.app_user_id)));
-    const alertIds = Array.from(new Set(rows.map((r) => r.alert_id).filter(Boolean))) as string[];
-    const simUserIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean))) as string[];
-
-    const [traineesRes, usersRes, alertsResPrimary, rootsRes, decsRes] = await Promise.all([
-      supabase.from("app_users").select("id, email, full_name").in("id", traineeIds),
-      simUserIds.length
-        ? supabase.from("users").select("id, full_name, email").in("id", simUserIds)
-        : Promise.resolve({ data: [], error: null }),
-      alertIds.length
-        ? supabase.from("alerts").select("id, internal_id, alert_type, severity, user_id").in("id", alertIds)
-        : Promise.resolve({ data: [], error: null }),
-      supabase
-        .from("simulator_comments")
-        .select("id, thread_id, body, created_at, comment_type, parent_comment_id")
-        .in("thread_id", threadIds)
-        .is("parent_comment_id", null)
-        .eq("comment_type", "user_comment")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("trainee_decisions")
-        .select("thread_id, rationale, decision, created_at")
-        .in("thread_id", threadIds)
-        .order("created_at", { ascending: false }),
-    ]);
-
-    if (traineesRes.error) {
-      setError(traineesRes.error.message);
-      setThreads([]);
-      setLoading(false);
-      return;
-    }
-    if (usersRes.error) {
-      setError(usersRes.error.message);
-      setThreads([]);
-      setLoading(false);
-      return;
-    }
-
-    let alertsData: AdminAlertRow[] = [];
-    if (alertsResPrimary.error && alertIds.length) {
-      const alertsResFallback = await supabase
-        .from("alerts")
-        .select("id, internal_id, alert_type, severity, user_id")
-        .in("id", alertIds);
-      if (alertsResFallback.error) {
-        setError(alertsResFallback.error.message);
+    async function load() {
+      if (!canViewAdminPanel) {
         setThreads([]);
         setLoading(false);
         return;
       }
-      alertsData = (alertsResFallback.data as AdminAlertRow[]) ?? [];
-    } else {
-      alertsData = (alertsResPrimary.data as AdminAlertRow[]) ?? [];
-    }
 
-    const traineesMap = new Map<string, { id: string; email: string | null; full_name: string | null }>();
-    for (const t of (traineesRes.data as { id: string; email: string | null; full_name: string | null }[]) ?? []) {
-      traineesMap.set(t.id, t);
-    }
+      const supabase = createClient();
+      setLoading(true);
+      setError(null);
+      const result = await listAdminConsoleThreads(supabase);
+      if (cancelled) return;
 
-    const usersMap = new Map<string, Pick<UserRow, "id" | "full_name" | "email">>();
-    for (const u of (usersRes.data as Pick<UserRow, "id" | "full_name" | "email">[]) ?? []) {
-      usersMap.set(u.id, u);
-    }
-
-    const alertsMap = new Map<string, AdminAlertRow>();
-    for (const a of alertsData) {
-      if (a.id) alertsMap.set(String(a.id), a);
-    }
-
-    const rootByThread = new Map<string, { id: string; body: string }>();
-    for (const c of (rootsRes.data as { id: string; thread_id: string | null; body: string }[]) ?? []) {
-      if (!c.thread_id) continue;
-      if (!rootByThread.has(c.thread_id)) {
-        rootByThread.set(c.thread_id, { id: c.id, body: c.body });
+      if (result.error) {
+        setError(result.error);
+        setThreads([]);
+        setLoading(false);
+        return;
       }
-    }
 
-    const latestDecPreview = new Map<string, string>();
-    for (const d of (decsRes.data as { thread_id: string; rationale: string | null; decision: string }[]) ?? []) {
-      if (!latestDecPreview.has(d.thread_id)) {
-        latestDecPreview.set(d.thread_id, (d.rationale ?? d.decision ?? "").trim());
-      }
-    }
-
-    if (rootsRes.error || decsRes.error) {
-      setError(rootsRes.error?.message ?? decsRes.error?.message ?? "Failed to load thread activity");
-      setThreads([]);
+      setThreads(result.threads);
       setLoading(false);
-      return;
     }
 
-    const built: ThreadListItem[] = rows.map((rt) => {
-      const trainee = traineesMap.get(rt.app_user_id);
-      const traineeLabel =
-        (trainee?.full_name ?? "").trim() || (trainee?.email ?? "").trim() || rt.app_user_id.slice(0, 8);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewAdminPanel, reloadTick]);
 
-      let targetLabel = "Review thread";
-      let targetHref = "/";
-      if (rt.context_type === "alert" && rt.alert_id) {
-        const alert = alertsMap.get(String(rt.alert_id));
-        const alertPublicId = alert?.id ?? "unknown";
-        const type = (alert?.alert_type ?? alert?.type ?? "alert").toString().toUpperCase();
-        const severity = alert?.severity ? ` · ${alert.severity}` : "";
-        targetLabel = `Alert ${alertPublicId} · ${type}${severity}`;
-        targetHref = `/alerts/${alertPublicId}`;
-      } else if (rt.context_type === "profile" && rt.user_id) {
-        const su = usersMap.get(rt.user_id);
-        const uLabel = (su?.full_name ?? "").trim() || (su?.email ?? "").trim() || rt.user_id;
-        targetLabel = `User profile · ${uLabel}`;
-        targetHref = `/users/${rt.user_id}`;
-      }
+  const refreshThreads = useCallback(() => {
+    setReloadTick((tick) => tick + 1);
+  }, []);
 
-      const root = rootByThread.get(rt.id);
-      const decPrev = latestDecPreview.get(rt.id);
-      const preview = (root?.body ?? decPrev ?? "").trim() || "—";
-
-      return {
-        threadId: rt.id,
-        traineeLabel,
-        targetLabel,
-        targetHref,
-        qaParentId: root?.id ?? null,
-        preview,
-        created_at: rt.created_at,
-      };
-    });
-
-    setThreads(built);
-    setLoading(false);
-  }, [isAdmin]);
-
-  useEffect(() => {
-    void refreshThreads();
-  }, [refreshThreads]);
-
-  const onSendReply = async (thread: ThreadListItem) => {
+  const onSendReply = async (thread: AdminConsoleThreadListItem) => {
     if (!appUser?.id || !replyBody.trim()) return;
     if (!thread.qaParentId) {
       setActionError("There is no trainee top-level comment to reply to yet. Open the case and wait for a user message.");
@@ -227,25 +64,23 @@ export default function AdminHomePage() {
     const supabase = createClient();
     setActionError(null);
     setActionOk(null);
-
-    const { error: insErr } = await supabase.from("simulator_comments").insert({
-      thread_id: thread.threadId,
-      author_app_user_id: appUser.id,
-      author_role: "admin",
-      comment_type: "admin_qa",
-      parent_comment_id: thread.qaParentId,
-      body: replyBody.trim(),
-    });
-
-    if (insErr) {
-      setActionError(insErr.message);
+    try {
+      await addStaffQaReply(supabase, {
+        threadId: thread.threadId,
+        parentCommentId: thread.qaParentId,
+        authorAppUserId: appUser.id,
+        role: appUser.role,
+        body: replyBody.trim(),
+      });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not send QA reply");
       return;
     }
 
     setReplyBody("");
     setReplyTo(null);
     setActionOk("Reply sent.");
-    await refreshThreads();
+    refreshThreads();
   };
 
   const dashedPanelClass =
@@ -261,7 +96,7 @@ export default function AdminHomePage() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canViewAdminPanel) {
     return (
       <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
         <div className="mx-auto w-full min-w-0 max-w-6xl space-y-3">
@@ -314,12 +149,12 @@ export default function AdminHomePage() {
             >
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                 <span>Trainee · {thread.traineeLabel}</span>
-                <span className="tabular-nums">{formatDateTime(thread.created_at)}</span>
+                <span className="tabular-nums">{thread.createdAtLabel}</span>
               </div>
 
               <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">{thread.targetLabel}</span>
-                <Link href={`${thread.targetHref}?thread=${thread.threadId}`} className="text-[#264B5A] underline">
+                <Link href={thread.targetHref} className="text-[#264B5A] underline">
                   Open in review mode
                 </Link>
               </div>

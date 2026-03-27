@@ -1,11 +1,12 @@
 "use client";
 
+import { formatAppUserRoleLabel } from "@/lib/app-user-role";
 import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
 import { formatDateTime } from "@/lib/format";
 import { createClient } from "@/lib/supabase";
 import type { AppUserRow } from "@/lib/types";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
 type ProfileDetailsFormProps = {
   appUser: AppUserRow | null;
@@ -44,12 +45,6 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setFirstName(appUser?.first_name ?? "");
-    setLastName(appUser?.last_name ?? "");
-    setCountryCode(appUser?.country_code?.trim() ?? "");
-  }, [appUser?.first_name, appUser?.last_name, appUser?.country_code]);
-
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     setMessage(null);
@@ -62,10 +57,6 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
     setSaving(true);
     try {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not signed in");
 
       const { error: upErr } = await supabase.from("app_user_profiles").upsert(
         {
@@ -97,9 +88,7 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
   }
 
   const emailDisplay = (appUser.email ?? authEmail)?.trim() || "—";
-  const roleDisplay = appUser.role
-    ? appUser.role.charAt(0).toUpperCase() + appUser.role.slice(1)
-    : "—";
+  const roleDisplay = appUser.role ? formatAppUserRoleLabel(appUser.role) : "—";
 
   return (
     <form onSubmit={(e) => void onSave(e)} className="mt-6">

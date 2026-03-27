@@ -4,8 +4,9 @@ import { AlertDetailSkeleton } from "@/components/alert-detail-skeleton";
 import { QueryErrorBanner } from "@/components/query-error";
 import { SimulatorCommentsPanel } from "@/components/simulator-comments-panel";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
+import { getAlertContextIds } from "@/lib/alerts/identity";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { useReviewWorkspaceActor } from "@/lib/hooks/use-review-workspace-actor";
 import { useTraineeDecisions } from "@/lib/hooks/use-trainee-decisions";
 import { runSerializedAuth } from "@/lib/auth/auth-user-queue";
 import { ensureAlertReviewThread } from "@/lib/review/ensure-thread";
@@ -13,14 +14,14 @@ import { fetchReviewThreadIdForAlert } from "@/lib/review/fetch-review-thread-id
 import { TABLE_PY_INNER } from "@/lib/table-padding";
 import { createClient } from "@/lib/supabase";
 import {
-  deleteTraineeAlertAssignmentForUser,
-  fetchAlertAssignees,
-  insertTraineeAlertAssignment,
-} from "@/lib/trainee-alert-assignments";
+  assignAlertToTraineeSelf,
+  listAlertAssigneesForContext,
+  unassignAlertFromTraineeSelf,
+} from "@/lib/services/assignments";
 import { formatPostgrestError } from "@/lib/trainee-user-watchlist";
-import type { AlertNoteRow, AlertRow } from "@/lib/types";
+import type { AlertRow, PredefinedAlertNoteRow } from "@/lib/types";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 type Decision = "false_positive" | "true_positive" | "info_requested" | "escalated";
@@ -139,15 +140,11 @@ const decisionOptionClass = (key: Decision, selected: boolean) => {
 };
 
 export default function AlertDetailsPage() {
-  const supabase = createClient();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const threadParam = searchParams.get("thread");
-  const { appUser } = useCurrentUser();
+  const { appUser, hasStaffAccess, isTraineeActor } = useReviewWorkspaceActor();
   const params = useParams<{ id: string }>();
   const alertId = params?.id ?? "a-unknown";
 
-  const [predefinedNotes, setPredefinedNotes] = useState<AlertNoteRow[]>([]);
+  const [predefinedNotes, setPredefinedNotes] = useState<PredefinedAlertNoteRow[]>([]);
   const [alert, setAlert] = useState<AlertRow | null>(null);
   const [otherAlerts, setOtherAlerts] = useState<AlertRow[]>([]);
   const [keyInfo, setKeyInfo] = useState<KeyInfo | null>(null);
@@ -155,10 +152,8 @@ export default function AlertDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
 
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  /** Latest review thread for this alert (canonical sidebar); RLS allows trainee/admin per policies. */
+  /** Latest review thread for this alert (sidebar + decisions); RLS allows trainee/admin per policies. */
   const [canonicalAsideThreadId, setCanonicalAsideThreadId] = useState<string | null>(null);
-  const [threadCheckDone, setThreadCheckDone] = useState(false);
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [unassignBusy, setUnassignBusy] = useState(false);
@@ -171,33 +166,35 @@ export default function AlertDetailsPage() {
   const [submitBusy, setSubmitBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
+  const alertContext = getAlertContextIds(alert);
 
-  const reviewMode = Boolean(activeThreadId);
-  /** Latest thread for this alert on canonical view; active thread in review mode. */
-  const decisionsThreadId = reviewMode ? activeThreadId : canonicalAsideThreadId;
+  const decisionsThreadId = canonicalAsideThreadId;
   const { decisions, loading: decisionsLoading, submitDecision, resetDecision } = useTraineeDecisions(decisionsThreadId);
 
   useEffect(() => {
-    if (!alert) {
+    if (!alertContext.publicId) {
       setAssignees([]);
       return;
     }
+    const publicAlertId = alertContext.publicId;
     let cancelled = false;
     (async () => {
-      const { assignees: list } = await fetchAlertAssignees(supabase, {
-        internalId: alert.internal_id,
-        publicId: alert.id,
+      const supabase = createClient();
+      const { assignees: list } = await listAlertAssigneesForContext(supabase, {
+        internalId: alertContext.internalId,
+        publicId: publicAlertId,
       });
       if (!cancelled) setAssignees(list);
     })();
     return () => {
       cancelled = true;
     };
-  }, [alert?.id, alert?.internal_id, supabase, reloadTick]);
+  }, [alertContext.internalId, alertContext.publicId, reloadTick]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const supabase = createClient();
       setLoading(true);
       setError(null);
       const { data: row, error: qError } = await supabase
@@ -230,7 +227,7 @@ export default function AlertDetailsPage() {
         .order("created_at", { ascending: false });
       if (!cancelled) {
         if (!notesErr && notesData) {
-          setPredefinedNotes(notesData as AlertNoteRow[]);
+          setPredefinedNotes(notesData as PredefinedAlertNoteRow[]);
         } else {
           setPredefinedNotes([]);
         }
@@ -295,52 +292,10 @@ export default function AlertDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [alertId, reloadTick, supabase]);
+  }, [alertId, reloadTick]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!threadParam || !alert?.internal_id) {
-      setActiveThreadId(null);
-      setThreadCheckDone(true);
-      return;
-    }
-    if (!appUser) {
-      setThreadCheckDone(false);
-      return;
-    }
-    setThreadCheckDone(false);
-    (async () => {
-      const { data: th, error: thErr } = await supabase
-        .from("review_threads")
-        .select("id, app_user_id, alert_id, context_type")
-        .eq("id", threadParam)
-        .maybeSingle();
-      if (cancelled) return;
-      if (thErr || !th) {
-        setActiveThreadId(null);
-        setThreadCheckDone(true);
-        return;
-      }
-      if (th.context_type !== "alert" || String(th.alert_id) !== String(alert.id)) {
-        setActiveThreadId(null);
-        setThreadCheckDone(true);
-        return;
-      }
-      if (appUser.role === "user" && th.app_user_id !== appUser.id) {
-        setActiveThreadId(null);
-        setThreadCheckDone(true);
-        return;
-      }
-      setActiveThreadId(String(th.id));
-      setThreadCheckDone(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [threadParam, alert?.internal_id, appUser, supabase]);
-
-  useEffect(() => {
-    if (!alert?.internal_id) {
+    if (!alertContext.internalId) {
       setCanonicalAsideThreadId(null);
       return;
     }
@@ -348,13 +303,15 @@ export default function AlertDetailsPage() {
       setCanonicalAsideThreadId(null);
       return;
     }
+    const alertInternalId = alertContext.internalId;
     let cancelled = false;
     (async () => {
-      if (appUser.role === "user") {
+      const supabase = createClient();
+      if (isTraineeActor) {
         const { threadId, error: thErr } = await ensureAlertReviewThread(
           supabase,
           appUser.id,
-          String(alert.internal_id)
+          alertInternalId
         );
         if (cancelled) return;
         if (thErr || !threadId) {
@@ -366,7 +323,7 @@ export default function AlertDetailsPage() {
       }
       const { threadId, error: thErr } = await fetchReviewThreadIdForAlert(
         supabase,
-        String(alert.internal_id),
+        alertInternalId,
         null
       );
       if (cancelled) return;
@@ -379,23 +336,25 @@ export default function AlertDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [alert?.internal_id, appUser, supabase, reloadTick]);
+  }, [alertContext.internalId, appUser, isTraineeActor, reloadTick]);
 
   const onAssignToMe = useCallback(async () => {
-    if (!appUser?.id || appUser.role !== "user" || !alert) return;
-    if (!alert.internal_id && !alert.id) return;
+    if (!appUser?.id || !isTraineeActor || !alert) return;
+    const publicAlertId = alertContext.publicId;
+    if (!publicAlertId) return;
     setAssignBusy(true);
     setAssignError(null);
     try {
+      const supabase = createClient();
       await runSerializedAuth(async () => {
-        const { error: insErr } = await insertTraineeAlertAssignment(supabase, appUser.id, {
-          internalId: alert.internal_id,
-          publicId: alert.id,
+        const { error: insErr } = await assignAlertToTraineeSelf(supabase, appUser.id, {
+          internalId: alertContext.internalId,
+          publicId: publicAlertId,
         });
         if (insErr) throw insErr;
-        const { assignees: list } = await fetchAlertAssignees(supabase, {
-          internalId: alert.internal_id,
-          publicId: alert.id,
+        const { assignees: list } = await listAlertAssigneesForContext(supabase, {
+          internalId: alertContext.internalId,
+          publicId: publicAlertId,
         });
         setAssignees(list);
       });
@@ -404,22 +363,25 @@ export default function AlertDetailsPage() {
     } finally {
       setAssignBusy(false);
     }
-  }, [alert, appUser, supabase]);
+  }, [alert, alertContext.internalId, alertContext.publicId, appUser, isTraineeActor]);
 
   const onUnassignSelf = useCallback(async () => {
-    if (!appUser?.id || appUser.role !== "user" || !alert) return;
+    if (!appUser?.id || !isTraineeActor || !alert) return;
+    const publicAlertId = alertContext.publicId;
+    if (!publicAlertId) return;
     setUnassignBusy(true);
     setAssignError(null);
     try {
+      const supabase = createClient();
       await runSerializedAuth(async () => {
-        const { error: delErr } = await deleteTraineeAlertAssignmentForUser(supabase, appUser.id, {
-          internalId: alert.internal_id,
-          publicId: alert.id,
+        const { error: delErr } = await unassignAlertFromTraineeSelf(supabase, appUser.id, {
+          internalId: alertContext.internalId,
+          publicId: publicAlertId,
         });
         if (delErr) throw delErr;
-        const { assignees: list } = await fetchAlertAssignees(supabase, {
-          internalId: alert.internal_id,
-          publicId: alert.id,
+        const { assignees: list } = await listAlertAssigneesForContext(supabase, {
+          internalId: alertContext.internalId,
+          publicId: publicAlertId,
         });
         setAssignees(list);
       });
@@ -428,7 +390,7 @@ export default function AlertDetailsPage() {
     } finally {
       setUnassignBusy(false);
     }
-  }, [alert, appUser, supabase]);
+  }, [alert, alertContext.internalId, alertContext.publicId, appUser, isTraineeActor]);
 
   const assignedToMe =
     Boolean(appUser?.id) && assignees.some((a) => a.app_user_id === appUser?.id);
@@ -436,33 +398,10 @@ export default function AlertDetailsPage() {
   const assignmentSummaryLabel =
     assignees.length === 0 ? "Unassigned" : assignedToMe ? "Assigned to you" : "Assigned";
 
-  const onSubmitDecision = useCallback(async () => {
-    if (!appUser?.id || !pendingDecision || !decisionsThreadId || !alert) return;
-    setSubmitBusy(true);
-    setSubmitError(null);
-    try {
-      await submitDecision({
-        appUserId: appUser.id,
-        alertId: alert.id,
-        userId: alert.user_id,
-        decision: pendingDecision,
-        proposedAlertStatus: proposedStatusForDecision(pendingDecision),
-        rationale: rationale.trim() || null,
-        reviewState: "submitted",
-      });
-      setRationale("");
-      setPendingDecision(null);
-    } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : "Submit failed");
-    } finally {
-      setSubmitBusy(false);
-    }
-  }, [alert, appUser?.id, decisionsThreadId, pendingDecision, rationale, submitDecision]);
-
   const onPickDecision = useCallback(
     async (decision: Decision) => {
       setPendingDecision(decision);
-      if (appUser?.role !== "user" || !appUser.id || !decisionsThreadId || !alert) return;
+      if (!appUser || !isTraineeActor || !appUser.id || !decisionsThreadId || !alert) return;
       setSubmitBusy(true);
       setSubmitError(null);
       try {
@@ -481,11 +420,11 @@ export default function AlertDetailsPage() {
         setSubmitBusy(false);
       }
     },
-    [alert, appUser, decisionsThreadId, rationale, submitDecision]
+    [alert, appUser, decisionsThreadId, isTraineeActor, rationale, submitDecision]
   );
 
   const onResetDecision = useCallback(async () => {
-    if (appUser?.role !== "user" || !appUser.id) return;
+    if (!appUser || !isTraineeActor || !appUser.id) return;
     setResetBusy(true);
     setSubmitError(null);
     try {
@@ -497,7 +436,7 @@ export default function AlertDetailsPage() {
     } finally {
       setResetBusy(false);
     }
-  }, [appUser, resetDecision]);
+  }, [appUser, isTraineeActor, resetDecision]);
 
   const ruleCode = ((alert as AlertWithRuleCode | null)?.rule_code ?? "").trim();
   const ruleName = ((alert as AlertWithRuleCode | null)?.rule_name ?? "").trim();
@@ -523,8 +462,6 @@ export default function AlertDetailsPage() {
       ? Math.round(((keyInfo.spend30dUsd - keyInfo.annualIncomeMaxUsd) / keyInfo.annualIncomeMaxUsd) * 100)
       : null;
   const differenceLabel = differencePct != null ? (differencePct >= 0 ? `+${differencePct}%` : `${differencePct}%`) : "—";
-
-  const threadInvalid = Boolean(threadParam && threadCheckDone && !activeThreadId && alert);
 
   if (loading) {
     return <AlertDetailSkeleton />;
@@ -572,90 +509,6 @@ export default function AlertDetailsPage() {
         / <span className="font-mono text-slate-700">{alertId}</span>
       </nav>
 
-      {threadInvalid ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          This review link is invalid or you do not have access.{" "}
-          <Link href={`/alerts/${alertId}`} className="font-medium text-[#264B5A] underline">
-            View canonical alert
-          </Link>
-        </p>
-      ) : null}
-
-      {reviewMode ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
-          <h2 className="heading-section mb-2">Review workspace</h2>
-          <p className="mb-3 text-xs text-slate-600">
-            Decisions and comments here are training-only and do not change simulator alert records.
-          </p>
-          {decisionsLoading ? (
-            <p className="text-xs text-slate-500">Loading decisions…</p>
-          ) : decisions.length > 0 ? (
-            <ul className="mb-4 space-y-2 text-sm">
-              {decisions.map((d) => (
-                <li key={d.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="mb-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                    <span className="tabular-nums">{formatDateTime(d.created_at)}</span>
-                    {d.proposed_alert_status ? (
-                      <span>Proposed status: {formatStatusLabel(d.proposed_alert_status)}</span>
-                    ) : null}
-                  </div>
-                  <p className="mb-1">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${decisionBadgeClass(d.decision)}`}>
-                      {getDecisionLabel(d.decision)}
-                    </span>
-                  </p>
-                  {d.rationale ? <p className="whitespace-pre-wrap text-slate-700">{d.rationale}</p> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mb-4 text-xs text-slate-500">No decisions submitted in this thread yet.</p>
-          )}
-
-          {appUser?.role === "user" ? (
-            <div className="space-y-3 border-t border-slate-200 pt-3">
-              <p className="text-xs font-medium text-slate-700">Submit a new decision (append-only)</p>
-              <textarea
-                value={rationale}
-                onChange={(e) => setRationale(e.target.value)}
-                rows={3}
-                placeholder="Rationale (optional)"
-                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
-              />
-              <button
-                type="button"
-                disabled={!pendingDecision || submitBusy}
-                onClick={() => void onSubmitDecision()}
-                className="rounded-lg bg-[#264B5A] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {submitBusy ? "Submitting…" : "Submit decision"}
-              </button>
-              {submitError ? <p className="text-xs text-rose-600">{submitError}</p> : null}
-            </div>
-          ) : null}
-
-          <div className="mt-4 border-t border-slate-200 pt-4">
-            <SimulatorCommentsPanel
-              threadId={activeThreadId}
-              reviewMode
-              privateAlertInternalId={alert.internal_id ?? null}
-              privateSimulatorUserId={null}
-              predefinedNotes={predefinedNotes.map((n) => ({
-                id: n.id,
-                note_text: n.note_text,
-                created_at: n.created_at,
-                created_by: n.created_by,
-              }))}
-              title="Training thread & analyst notes"
-              showTitle
-              withTopBorder={false}
-              emptyMessage="No thread messages yet."
-              adminModeOverride={appUser?.role === "admin" ? "reply" : undefined}
-            />
-          </div>
-        </div>
-      ) : null}
-
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="min-w-0 space-y-4 lg:col-span-8">
           <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm sm:p-5">
@@ -676,7 +529,7 @@ export default function AlertDetailsPage() {
               </p>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2 font-mono text-sm text-slate-600">
                 <span>{assignmentSummaryLabel}</span>
-                {appUser?.role === "user" && !reviewMode && (Boolean(alert.internal_id) || Boolean(alert.id)) ? (
+                {isTraineeActor && (Boolean(alert.internal_id) || Boolean(alert.id)) ? (
                   <>
                     <span aria-hidden>·</span>
                     {assignees.length === 0 ? (
@@ -705,14 +558,6 @@ export default function AlertDetailsPage() {
               <h3 className="text-base font-semibold text-slate-900">{formatRuleDisplay(ruleCode, ruleName)}</h3>
 
               <div className="flex flex-wrap items-center gap-2">
-                {reviewMode ? (
-                  <Link
-                    href={`/alerts/${alertId}`}
-                    className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Back to canonical view
-                  </Link>
-                ) : null}
                 {assignError ? <span className="text-xs text-rose-600">{assignError}</span> : null}
               </div>
 
@@ -775,7 +620,7 @@ export default function AlertDetailsPage() {
             </div>
           )}
 
-          {appUser?.role === "user" || appUser?.role === "admin" ? (
+          {isTraineeActor || hasStaffAccess ? (
             <div className="rounded-xl bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
               <h2 className="heading-section mb-3">Decision</h2>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -790,8 +635,9 @@ export default function AlertDetailsPage() {
                   <button
                     key={key}
                     type="button"
+                    disabled={submitBusy}
                     onClick={() => void onPickDecision(key)}
-                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${decisionOptionClass(
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${decisionOptionClass(
                       key,
                       pendingDecision === key
                     )}`}
@@ -800,7 +646,8 @@ export default function AlertDetailsPage() {
                   </button>
                 ))}
               </div>
-              {appUser?.role === "user" ? (
+              {submitError ? <p className="mt-2 text-xs text-rose-600">{submitError}</p> : null}
+              {isTraineeActor ? (
                 <div className="mt-2 flex justify-end">
                   <button
                     type="button"
@@ -812,7 +659,7 @@ export default function AlertDetailsPage() {
                   </button>
                 </div>
               ) : null}
-              {appUser?.role === "admin" ? (
+              {hasStaffAccess ? (
                 <p className="mt-2 text-[10px] leading-4 text-slate-400">
                   Admin view: status/decision buttons are demo-only and do not write to the database.
                 </p>
@@ -861,7 +708,7 @@ export default function AlertDetailsPage() {
 
         <aside className="lg:col-span-4">
           <div className="space-y-4 lg:sticky lg:top-6">
-            {appUser?.role === "admin" && alert.internal_id ? (
+            {hasStaffAccess && alert.internal_id ? (
               <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
                 <h2 className="heading-section mb-3">Admin internal notes</h2>
                 <SimulatorCommentsPanel
@@ -876,7 +723,7 @@ export default function AlertDetailsPage() {
             ) : null}
             <div className="rounded-xl border border-slate-300 bg-gradient-to-b from-slate-50/50 to-slate-100 p-4 shadow-sm">
               <h2 className="heading-section mb-3">Analyst notes</h2>
-              {appUser?.role === "admin" ? (
+              {hasStaffAccess ? (
                 <div className="mb-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
                   Go to{" "}
                   <Link href="/admin" className="font-medium text-[#264B5A] hover:underline">
@@ -886,7 +733,7 @@ export default function AlertDetailsPage() {
                 </div>
               ) : null}
               <SimulatorCommentsPanel
-                threadId={appUser?.role === "admin" ? activeThreadId : canonicalAsideThreadId}
+                threadId={canonicalAsideThreadId}
                 reviewMode
                 privateAlertInternalId={alert.internal_id ?? null}
                 privateSimulatorUserId={null}
@@ -896,7 +743,7 @@ export default function AlertDetailsPage() {
                   created_at: n.created_at,
                   created_by: n.created_by,
                 }))}
-                adminModeOverride={appUser?.role === "admin" ? "reply" : undefined}
+                adminModeOverride={hasStaffAccess ? "reply" : undefined}
                 showTitle={false}
                 withTopBorder={false}
                 emptyMessage="No notes yet. Open Review to start a trainee thread."

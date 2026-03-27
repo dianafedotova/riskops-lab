@@ -6,10 +6,6 @@ const APP_USER_SELECT =
 
 const PROFILE_SELECT = "app_user_id, first_name, last_name, country_code, updated_at" as const;
 
-function emailForIlikeEq(email: string): string {
-  return email.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-}
-
 function mergeProfile(base: AppUserRow, profile: AppUserProfileRow | null): AppUserRow {
   if (!profile) return base;
   const fn = profile.first_name ?? base.first_name;
@@ -52,44 +48,15 @@ async function loadAppUserProfile(
  */
 export async function fetchAppUserRow(
   supabase: SupabaseClient,
-  user: Pick<User, "id" | "email">
+  user: Pick<User, "id">
 ): Promise<{ row: AppUserRow | null; error: PostgrestError | null }> {
-  console.log("Auth user id:", user.id);
-
   const { data: appUser, error } = await supabase
     .from("app_users")
     .select(APP_USER_SELECT)
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
-  console.log("App user:", appUser);
-
   if (error) return { row: null, error };
-  if (!appUser && user.email) {
-    const byEmail = await supabase
-      .from("app_users")
-      .select(APP_USER_SELECT)
-      .ilike("email", emailForIlikeEq(user.email))
-      .maybeSingle();
-    if (byEmail.error) return { row: null, error: byEmail.error };
-    if (byEmail.data) {
-      // Legacy rows can have empty or stale auth_user_id. Rebind to current auth user.
-      const rebound = await supabase
-        .from("app_users")
-        .update({ auth_user_id: user.id })
-        .eq("id", (byEmail.data as AppUserRow).id)
-        .select(APP_USER_SELECT)
-        .single();
-      if (rebound.error) return { row: null, error: rebound.error };
-      console.log("App user:", rebound.data);
-      const { row: merged, error: profileErr } = await loadAppUserProfile(
-        supabase,
-        rebound.data as AppUserRow,
-      );
-      if (profileErr) return { row: null, error: profileErr };
-      return { row: merged, error: null };
-    }
-  }
   if (!appUser) return { row: null, error: null };
 
   const row = appUser as AppUserRow;

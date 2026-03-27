@@ -1,6 +1,6 @@
 "use client";
 
-import { fetchAppUserRow } from "@/lib/auth/fetch-app-user";
+import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
@@ -13,6 +13,25 @@ function toFriendlyAuthError(message: string): string {
   if (lower.includes("email not confirmed")) return "Please confirm your email before signing in.";
   if (lower.includes("network")) return "Network error. Please try again.";
   return message;
+}
+
+function getInitialOauthMessage(
+  oauthFlag: string | null,
+  oauthErrMessage: string | null
+): string | null {
+  if (oauthFlag === "pkce") {
+    return "Google sign-in could not complete (session cookie mismatch). Try again in this same browser window, or clear site data for this site and retry. If you use a password manager or privacy mode, allow cookies for this origin.";
+  }
+  if (oauthFlag === "error" && oauthErrMessage) {
+    return toFriendlyAuthError(oauthErrMessage);
+  }
+  if (oauthFlag === "config") {
+    return "Sign-in is not configured (missing Supabase environment variables on the server).";
+  }
+  if (oauthFlag === "no_session" || oauthFlag === "missing_code") {
+    return "Sign-in did not finish. Please try “Continue with Google” again.";
+  }
+  return null;
 }
 
 export function LoginForm() {
@@ -28,7 +47,9 @@ export function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(() =>
+    getInitialOauthMessage(oauthFlag, oauthErrMessage)
+  );
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
@@ -40,25 +61,6 @@ export function LoginForm() {
     params.delete("oauth");
     params.delete("message");
     router.replace(`/sign-in${params.toString() ? `?${params.toString()}` : ""}`);
-
-    if (oauthFlag === "pkce") {
-      setMessage(
-        "Google sign-in could not complete (session cookie mismatch). Try again in this same browser window, or clear site data for this site and retry. If you use a password manager or privacy mode, allow cookies for this origin."
-      );
-      return;
-    }
-    if (oauthFlag === "error" && oauthErrMessage) {
-      setMessage(toFriendlyAuthError(oauthErrMessage));
-      return;
-    }
-    if (oauthFlag === "config") {
-      setMessage("Sign-in is not configured (missing Supabase environment variables on the server).");
-      return;
-    }
-    if (oauthFlag === "no_session" || oauthFlag === "missing_code") {
-      setMessage("Sign-in did not finish. Please try “Continue with Google” again.");
-      return;
-    }
   }, [oauthFlag, oauthErrMessage, router, searchParams]);
 
   useEffect(() => {
@@ -101,16 +103,15 @@ export function LoginForm() {
         }
         return;
       }
-      const {
-        data: { user: oauthUser },
-      } = await supabase.auth.getUser();
-      if (oauthUser) {
-        let { row: oauthProfile, error: oauthProfErr } = await fetchAppUserRow(supabase, oauthUser);
+      const firstCtx = await getCurrentAppUser(supabase);
+      if (firstCtx.authUser) {
+        let oauthProfile = firstCtx.appUser;
+        let oauthProfErr = firstCtx.error;
         if (oauthProfErr) {
           await new Promise((r) => setTimeout(r, 250));
-          const again = await fetchAppUserRow(supabase, oauthUser);
+          const again = await getCurrentAppUser(supabase);
           oauthProfErr = again.error;
-          oauthProfile = again.row;
+          oauthProfile = again.appUser;
         }
         if (oauthProfErr) {
           if (!cancelled) {
@@ -169,20 +170,19 @@ export function LoginForm() {
       setLoading(false);
       return;
     }
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    const firstCtx = await getCurrentAppUser(supabase);
+    if (!firstCtx.authUser) {
       setMessage("Could not load session");
       setLoading(false);
       return;
     }
-    let { row: profileRow, error: profileErr } = await fetchAppUserRow(supabase, user);
+    let profileRow = firstCtx.appUser;
+    let profileErr = firstCtx.error;
     if (profileErr) {
       await new Promise((r) => setTimeout(r, 250));
-      const second = await fetchAppUserRow(supabase, user);
+      const second = await getCurrentAppUser(supabase);
       profileErr = second.error;
-      profileRow = second.row;
+      profileRow = second.appUser;
     }
     if (profileErr) {
       setMessage(

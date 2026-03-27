@@ -14,20 +14,13 @@ type AppUserAvatarProps = {
 };
 
 export function AppUserAvatar({ avatarField, initials, fallbackClassName, imgClassName }: AppUserAvatarProps) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [showFallback, setShowFallback] = useState(false);
+  const [signedSrc, setSignedSrc] = useState<{ objectPath: string; url: string } | null>(null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const raw = avatarField?.trim() ?? "";
+  const objectPath = raw ? avatarsObjectPathFromDbValue(raw) : null;
 
   useEffect(() => {
-    setShowFallback(false);
-    const raw = avatarField?.trim();
-    if (!raw) {
-      setSrc(null);
-      return;
-    }
-
-    const objectPath = avatarsObjectPathFromDbValue(raw);
     if (!objectPath) {
-      setSrc(raw);
       return;
     }
 
@@ -38,20 +31,25 @@ export function AppUserAvatar({ avatarField, initials, fallbackClassName, imgCla
       const { data, error } = await supabase.storage.from(AVATARS_BUCKET).createSignedUrl(objectPath, 3600);
       if (cancelled) return;
       if (!error && data?.signedUrl) {
-        setSrc(data.signedUrl);
+        setSignedSrc({ objectPath, url: data.signedUrl });
         return;
       }
-      setSrc(supabase.storage.from(AVATARS_BUCKET).getPublicUrl(objectPath).data.publicUrl);
+      setSignedSrc({
+        objectPath,
+        url: supabase.storage.from(AVATARS_BUCKET).getPublicUrl(objectPath).data.publicUrl,
+      });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [avatarField]);
+  }, [objectPath]);
 
   const shell = "block h-full min-h-0 w-full min-w-0 overflow-hidden rounded-[inherit]";
+  const src = objectPath ? (signedSrc?.objectPath === objectPath ? signedSrc.url : null) : raw || null;
+  const shouldShowFallback = !src || failedSrc === src;
 
-  if (!src || showFallback) {
+  if (shouldShowFallback) {
     return (
       <span className={shell}>
         <span
@@ -71,7 +69,7 @@ export function AppUserAvatar({ avatarField, initials, fallbackClassName, imgCla
         src={src}
         alt=""
         className={imgClassName ?? "h-full w-full object-cover"}
-        onError={() => setShowFallback(true)}
+        onError={() => setFailedSrc(src)}
       />
     </span>
   );
