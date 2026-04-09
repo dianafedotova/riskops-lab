@@ -129,7 +129,7 @@ export function InternalNoteForm({
           <select
             id="sim-internal-note-signature"
             value={signature}
-            onChange={(event) => setSignature(event.target.value)}
+            onChange={(event) => setSignature(coerceInternalNoteSignatureLabel(event.target.value))}
             disabled={saving || deleting}
             className="dark-input h-11 w-full px-4 text-sm outline-none focus:ring-1 focus:ring-[var(--brand-ring)] disabled:opacity-60"
           >
