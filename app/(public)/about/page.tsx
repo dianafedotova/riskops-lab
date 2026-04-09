@@ -1,26 +1,18 @@
-import Link from "next/link";
-
 export default function AboutPage() {
   return (
-    <section className="space-y-5 rounded-2xl bg-slate-50 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section className="space-y-5 rounded-[1.2rem] bg-[var(--surface-panel)] p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
+      <div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--accent-stone-500)]">
             About
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--app-shell-bg)]">
             What is RiskOps Lab?
           </h1>
         </div>
-        <Link
-          href="/"
-          className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
-        >
-          Back to Home
-        </Link>
       </div>
 
-      <div className="space-y-4 text-sm leading-6 text-slate-700">
+      <div className="space-y-4 text-sm leading-6 text-[var(--accent-stone-500)]">
         <p>
           RiskOps Lab is a front-end simulator designed for internal fraud and
           anti-money laundering (AML) risk operations training.
@@ -41,10 +33,11 @@ export default function AboutPage() {
         </p>
       </div>
 
-      <div className="rounded-xl bg-amber-100/95 p-4 text-sm text-amber-900 shadow-sm">
+      <div className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--accent-stone-500)] shadow-sm">
         Not for production use. RiskOps Lab does not include live integrations,
         regulatory controls, or complete operational safeguards.
       </div>
     </section>
   );
 }
+

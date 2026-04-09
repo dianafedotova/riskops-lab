@@ -1,10 +1,15 @@
 "use client";
 
+import { AdminPanelNavDropdown } from "@/components/admin-panel-nav-dropdown";
+import { useCurrentUser } from "@/components/current-user-provider";
 import { UserAccountMenu } from "@/components/user-account-menu";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
-import { canSeeAdminNavLink } from "@/lib/permissions/checks";
-import type { AppUserRow } from "@/lib/types";
-import type { User } from "@supabase/supabase-js";
+import {
+  navBarLinkClassName,
+  navBarOuterClass,
+  navBarScrollRowClass,
+  navBarSignInClass,
+} from "@/lib/nav-bar-link-classes";
+import { canSeeAdminNavLink, canSeeTraineeWorkspace } from "@/lib/permissions/checks";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -22,61 +27,70 @@ const privateNavLinksBase = [
   { href: "/about", label: "About", match: (p: string) => p === "/about" },
 ] as const;
 
-const adminPanelLink = {
-  href: "/admin",
-  label: "Admin Panel",
-  match: (p: string) => p === "/admin" || p.startsWith("/admin/"),
-} as const;
-
-export type AppNavInitialSession = {
-  authUser: User | null;
-  appUser: AppUserRow | null;
-};
-
-type AppNavClientProps = {
-  initialSession: AppNavInitialSession;
-};
-
-export function AppNavClient({ initialSession }: AppNavClientProps) {
+export function AppNavClient() {
   const pathname = usePathname() ?? "";
-  const { authUser, appUser, loading: authLoading } = useCurrentUser(initialSession);
+  const { authUser, appUser, loading: authLoading } = useCurrentUser();
   const showAdminPanel = !authLoading && canSeeAdminNavLink(appUser?.role);
-  const privateNavLinks = showAdminPanel
-    ? [privateNavLinksBase[0], adminPanelLink, ...privateNavLinksBase.slice(1)]
-    : privateNavLinksBase;
-  const navLinks = (authUser ? privateNavLinks : publicNavLinks).filter(
-    (link) => !(link.href === "/" && pathname === "/" && !authUser)
-  );
+  const showMyCases = !authLoading && canSeeTraineeWorkspace(appUser?.role);
+  const myCasesNavLink = {
+    href: "/my-cases",
+    label: "My Cases",
+    match: (p: string) => p === "/my-cases" || p === "/workspace",
+  } as const;
+  const withTraineeLink = showMyCases
+    ? [privateNavLinksBase[0], myCasesNavLink, ...privateNavLinksBase.slice(1)]
+    : [...privateNavLinksBase];
 
   return (
-    <nav
-      className="-mx-1 flex max-w-full flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:pb-0"
-      aria-label="Main"
-    >
-      {navLinks.map((link) => {
-        const active = link.match(pathname);
-        return (
-          <Link
-            key={link.href}
-            href={link.href}
-            aria-current={active ? "page" : undefined}
-            className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out sm:min-h-0 sm:py-2 ${
-              active
-                ? "bg-[#6f9fb0]/35 text-slate-800 shadow-sm"
-                : "text-slate-700 hover:bg-[#6f9fb0]/18 hover:text-slate-900"
-            } `}
-          >
-            {link.label}
-          </Link>
-        );
-      })}
+    <nav className={navBarOuterClass} aria-label="Main">
+      <div className={navBarScrollRowClass}>
+        {authUser ? (
+          <>
+            <Link
+              key={withTraineeLink[0].href}
+              href={withTraineeLink[0].href}
+              aria-current={withTraineeLink[0].match(pathname) ? "page" : undefined}
+              className={navBarLinkClassName(withTraineeLink[0].match(pathname))}
+            >
+              {withTraineeLink[0].label}
+            </Link>
+            {showAdminPanel ? <AdminPanelNavDropdown /> : null}
+            {withTraineeLink.slice(1).map((link) => {
+              const active = link.match(pathname);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={active ? "page" : undefined}
+                  className={navBarLinkClassName(active)}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
+          </>
+        ) : (
+          publicNavLinks
+            .filter((link) => !(link.href === "/" && pathname === "/" && !authUser))
+            .map((link) => {
+              const active = link.match(pathname);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={active ? "page" : undefined}
+                  className={navBarLinkClassName(active)}
+                >
+                  {link.label}
+                </Link>
+              );
+            })
+        )}
+      </div>
       {!authLoading && authUser ? (
         <UserAccountMenu authUser={authUser} appUser={appUser} />
       ) : !authLoading ? (
-        <Link
-          href="/sign-in"
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-[#5e8d9c]/80 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4f7e8d]/85 sm:min-h-0 sm:py-2"
-        >
+        <Link href="/sign-in" className={navBarSignInClass}>
           Sign in
         </Link>
       ) : null}

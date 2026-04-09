@@ -1,4 +1,5 @@
 import { getCurrentAppUser } from "@/lib/auth/current-app-user";
+import { recordAppUserActivity } from "@/lib/services/app-user-activity";
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -116,6 +117,14 @@ export async function GET(request: NextRequest) {
     }
     return inactiveResponse;
   }
+
+  await recordAppUserActivity(supabase, {
+    appUserId: appUserRow.id,
+    eventType: "user_logged_in",
+    meta: {
+      provider: appUserRow.provider ?? undefined,
+    },
+  });
 
   return response;
 }

@@ -20,7 +20,7 @@ export default async function ProfilePage() {
     <div className="main-content-shell p-3 sm:p-5 md:p-6">
       <div className="space-y-4">
         <nav className="text-sm text-slate-600">
-          <Link href="/dashboard" className="font-medium text-[#2d5f70] hover:underline">
+          <Link href="/dashboard" className="font-medium text-[var(--brand-700)] hover:underline">
             Dashboard
           </Link>
           <span className="mx-2 text-slate-400" aria-hidden>
@@ -39,7 +39,7 @@ export default async function ProfilePage() {
           {/* sm:pl-40 = avatar column (w-32) + gap-8, aligns heading block on desktop */}
           <div className="sm:pl-40">
             {error ? (
-              <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="mt-4 rounded-[1.2rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 Could not load profile data: {error.message}
               </p>
             ) : null}
@@ -56,3 +56,4 @@ export default async function ProfilePage() {
     </div>
   );
 }
+

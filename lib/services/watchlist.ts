@@ -9,6 +9,7 @@ export type TraineeWatchedUserRow = {
   id: string;
   full_name: string | null;
   email: string | null;
+  status: string | null;
 };
 
 export async function listWatchlistUsersForTrainee(
@@ -36,7 +37,7 @@ export async function listWatchlistUsersForTrainee(
 
   const { data: users, error: usersError } = await supabase
     .from("users")
-    .select("id, full_name, email")
+    .select("id, full_name, email, status")
     .in("id", simulatorUserIds);
 
   if (usersError) {

@@ -1,28 +1,35 @@
-"use client";
+﻿"use client";
 
 import { formatDate } from "@/lib/format";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { useCurrentUser } from "@/components/current-user-provider";
 import { canSeeTraineeWorkspace } from "@/lib/permissions/checks";
 import { createClient } from "@/lib/supabase";
-import {
-  loadReviewThreadSummariesForDashboard,
-  type DashboardThreadSummary,
-} from "@/lib/dashboard-review-thread-summaries";
-import { listAssignedAlertsForTrainee } from "@/lib/services/assignments";
+import { listAssignedAlertsForTrainee, unassignAlertFromTraineeSelf } from "@/lib/services/assignments";
 import { listWatchlistUsersForTrainee, removeSimulatorUserFromWatchlist } from "@/lib/services/watchlist";
 import {
-  formatPostgrestError,
-} from "@/lib/trainee-user-watchlist";
+  filterActiveCases,
+  formatTraineeCasePhaseLabel,
+  loadTraineeCasesAndKpi,
+  sortTraineeCasesByUpdatedAt,
+  type TraineeCaseRow,
+  type TraineeCaseKpiCounts,
+} from "@/lib/trainee-cases";
+import { formatPostgrestError } from "@/lib/trainee-user-watchlist";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type MyAlertRow = {
   id: string;
+  internal_id?: string | null;
   user_id: string | null;
   status: string | null;
   severity: string | null;
   alert_type: string | null;
   created_at: string;
+  assignment_source: "self" | "staff" | "self_and_staff";
+  priority: "low" | "normal" | "high" | "urgent" | null;
+  due_at: string | null;
+  assignment_created_at: string;
 };
 
 type WatchedUserRow = {
@@ -31,23 +38,59 @@ type WatchedUserRow = {
   email: string | null;
 };
 
-type ThreadSummary = DashboardThreadSummary;
+const KPI_STAT_TILE_CLASS =
+  "surface-lift flex flex-col gap-1 rounded-[1rem] border border-slate-200/80 bg-white/90 p-4 text-left shadow-sm";
+
+/** Same as Drafts / Review cases section titles on alert & user review pages. */
+const DASHBOARD_COLUMN_TITLE_CLASS =
+  "text-left text-[0.75rem] font-bold uppercase tracking-[0.14em] text-[var(--app-shell-bg)]";
+
+function formatAssignmentSourceLabel(source: MyAlertRow["assignment_source"]) {
+  if (source === "staff") return "Assigned by staff";
+  if (source === "self_and_staff") return "Staff + self";
+  return "Self-assigned";
+}
+
+function assignmentSourceBadgeClass(source: MyAlertRow["assignment_source"]) {
+  if (source === "staff") return "ui-badge-blue";
+  if (source === "self_and_staff") return "ui-badge-teal";
+  return "ui-badge-neutral";
+}
+
+function assignmentPriorityBadgeClass(priority: MyAlertRow["priority"]) {
+  if (priority === "urgent") return "ui-badge-rose";
+  if (priority === "high") return "ui-badge-amber";
+  if (priority === "low") return "ui-badge-neutral";
+  return "ui-badge-blue";
+}
+
+function canUnassignSelf(source: MyAlertRow["assignment_source"]) {
+  return source === "self" || source === "self_and_staff";
+}
 
 export default function DashboardPage() {
   const { appUser, loading: userLoading } = useCurrentUser();
   const [myAlerts, setMyAlerts] = useState<MyAlertRow[]>([]);
   const [watchedUsers, setWatchedUsers] = useState<WatchedUserRow[]>([]);
-  const [threadSummaries, setThreadSummaries] = useState<ThreadSummary[]>([]);
+  const [cases, setCases] = useState<TraineeCaseRow[]>([]);
+  const [kpi, setKpi] = useState<TraineeCaseKpiCounts>({
+    initiated: 0,
+    underReview: 0,
+    needsAttention: 0,
+    done: 0,
+  });
   const [traineeLoading, setTraineeLoading] = useState(false);
   const [traineeError, setTraineeError] = useState<string | null>(null);
   const [watchRemoveBusyId, setWatchRemoveBusyId] = useState<string | null>(null);
+  const [alertUnassignBusyId, setAlertUnassignBusyId] = useState<string | null>(null);
   const canViewTraineeWorkspace = canSeeTraineeWorkspace(appUser?.role);
 
   const loadTraineeSections = useCallback(async () => {
     if (!appUser || !canViewTraineeWorkspace) {
       setMyAlerts([]);
       setWatchedUsers([]);
-      setThreadSummaries([]);
+      setCases([]);
+      setKpi({ initiated: 0, underReview: 0, needsAttention: 0, done: 0 });
       return;
     }
     const supabase = createClient();
@@ -61,7 +104,7 @@ export default function DashboardPage() {
         if (error) throw error;
         setMyAlerts(alerts as MyAlertRow[]);
       } catch (e) {
-        sectionErrors.push(`My alerts: ${formatPostgrestError(e)}`);
+        sectionErrors.push(`Alerts: ${formatPostgrestError(e)}`);
         setMyAlerts([]);
       }
 
@@ -75,16 +118,23 @@ export default function DashboardPage() {
       }
 
       try {
-        const threads = await loadReviewThreadSummariesForDashboard(supabase, appUser.id);
-        if (threads.error) {
-          sectionErrors.push(`Review threads: ${threads.error}`);
-          setThreadSummaries([]);
+        const { cases: caseRows, kpi: kpiCounts, error: caseErr } = await loadTraineeCasesAndKpi(
+          supabase,
+          appUser.id,
+          { threadLimit: null }
+        );
+        if (caseErr) {
+          sectionErrors.push(`Cases: ${caseErr}`);
+          setCases([]);
+          setKpi({ initiated: 0, underReview: 0, needsAttention: 0, done: 0 });
         } else {
-          setThreadSummaries(threads.summaries);
+          setCases(caseRows);
+          setKpi(kpiCounts);
         }
       } catch (e) {
-        sectionErrors.push(`Review threads: ${formatPostgrestError(e)}`);
-        setThreadSummaries([]);
+        sectionErrors.push(`Cases: ${formatPostgrestError(e)}`);
+        setCases([]);
+        setKpi({ initiated: 0, underReview: 0, needsAttention: 0, done: 0 });
       }
 
       setTraineeError(sectionErrors.length > 0 ? sectionErrors.join(" · ") : null);
@@ -109,159 +159,198 @@ export default function DashboardPage() {
     }
   }, [appUser, canViewTraineeWorkspace]);
 
+  const unassignAlertSelf = useCallback(
+    async (alert: MyAlertRow) => {
+      if (!appUser || !canViewTraineeWorkspace) return;
+      setAlertUnassignBusyId(alert.id);
+      setTraineeError(null);
+      try {
+        const supabase = createClient();
+        const { error } = await unassignAlertFromTraineeSelf(supabase, appUser.id, {
+          publicId: alert.id,
+          internalId: alert.internal_id ?? null,
+        });
+        if (error) throw error;
+        await loadTraineeSections();
+      } catch (e) {
+        setTraineeError(formatPostgrestError(e) || "Could not unassign this alert.");
+      } finally {
+        setAlertUnassignBusyId(null);
+      }
+    },
+    [appUser, canViewTraineeWorkspace, loadTraineeSections]
+  );
+
   useEffect(() => {
     if (userLoading) return;
     void loadTraineeSections();
   }, [userLoading, loadTraineeSections]);
 
-  const metricCards = [
-    { title: "Open Fraud Alerts", value: "24" },
-    { title: "Open AML Alerts", value: "11" },
-    { title: "Users Under Review", value: "37" },
-    { title: "Review Completed", value: "78" },
-  ];
+  const dashboardCases = sortTraineeCasesByUpdatedAt(filterActiveCases(cases)).slice(0, 5);
 
   return (
     <div className="main-content-shell p-3 sm:p-5 md:p-6">
-      <div className="space-y-4">
-        <section className="page-panel surface-lift p-4 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="heading-page">Simulation Overview</h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Internal simulator for fraud and AML analyst workflows.
-              </p>
-            </div>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              <Link
-                href="/users"
-                className="inline-flex min-h-11 min-w-[44px] items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 active:bg-[#1F3E49] sm:min-h-0 sm:px-3 sm:py-1.5"
-              >
-                Open Users
-              </Link>
-              <Link
-                href="/alerts"
-                className="inline-flex min-h-11 min-w-[44px] items-center justify-center rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors duration-150 hover:bg-slate-200 sm:min-h-0 sm:px-3 sm:py-1.5"
-              >
-                Open Alerts
-              </Link>
-            </div>
-          </div>
-        </section>
-
+      <div className="space-y-5">
         {canViewTraineeWorkspace ? (
-          <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
-            <h2 className="text-lg font-semibold text-slate-900">My workspace</h2>
+          <section className="workspace-stage surface-lift space-y-5 p-5 sm:p-6">
+            <h2 className="text-xl font-semibold tracking-tight text-slate-900">My Cases</h2>
             {traineeError ? <p className="text-sm text-rose-600">{traineeError}</p> : null}
             {userLoading || traineeLoading ? (
               <p className="text-sm text-slate-600">Loading your assignments…</p>
             ) : (
-              <div className="grid gap-4 xl:grid-cols-3">
-                <article className="surface-lift rounded-xl bg-slate-50 p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-900">My alerts</h3>
-                  {myAlerts.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-600">No personal assignments. Use “Assign to me” on an alert.</p>
-                  ) : (
-                    <ul className="mt-2 space-y-2 text-sm">
-                      {myAlerts.map((a) => (
-                        <li key={a.id}>
-                          <Link href={`/alerts/${a.id}`} className="font-mono text-xs text-[#264B5A] hover:underline">
-                            {a.id}
-                          </Link>
-                          <span className="text-slate-500"> · {a.status ?? "—"}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </article>
-                <article className="surface-lift rounded-xl bg-slate-50 p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-900">Watched users</h3>
-                  {watchedUsers.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-600">
-                      No users on your watchlist. Add one with “Watch user” on a simulator profile. Remove entries here with Delete.
-                    </p>
-                  ) : (
-                    <ul className="mt-2 space-y-2 text-sm">
-                      {watchedUsers.map((u) => (
-                        <li key={u.id} className="flex items-center justify-between gap-2">
-                          <Link href={`/users/${u.id}`} className="min-w-0 truncate text-[#264B5A] hover:underline">
-                            {u.full_name?.trim() || u.email || u.id}
-                          </Link>
-                          <button
-                            type="button"
-                            disabled={watchRemoveBusyId === u.id}
-                            onClick={() => void removeSimulatorFromWatchlist(u.id)}
-                            aria-label={`Delete ${u.full_name?.trim() || u.email || u.id} from watchlist`}
-                            className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {watchRemoveBusyId === u.id ? "…" : "Delete"}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </article>
-                <article className="surface-lift rounded-xl bg-slate-50 p-4 shadow-sm xl:col-span-1">
-                  <h3 className="text-sm font-semibold text-slate-900">Review threads</h3>
-                  {threadSummaries.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-600">Open Review from an alert or user to start a thread.</p>
-                  ) : (
-                    <ul className="mt-2 space-y-3 text-sm">
-                      {threadSummaries.map((t) => (
-                        <li key={t.threadId} className="rounded-lg border border-slate-200 bg-white p-2">
-                          <Link href={t.targetHref} className="font-medium text-[#264B5A] hover:underline">
-                            {t.targetLabel}
-                          </Link>
-                          <p className="mt-1 line-clamp-2 text-xs text-slate-600">{t.lastSnippet}</p>
-                          <p className="mt-0.5 text-[10px] text-slate-400 tabular-nums">{formatDate(t.updatedAt)}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </article>
-              </div>
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className={KPI_STAT_TILE_CLASS} aria-label={`Initiated cases: ${kpi.initiated}`}>
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Initiated</span>
+                    <span className="text-2xl font-semibold tabular-nums text-slate-900">{kpi.initiated}</span>
+                  </div>
+                  <div className={KPI_STAT_TILE_CLASS} aria-label={`Cases under review: ${kpi.underReview}`}>
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Under review</span>
+                    <span className="text-2xl font-semibold tabular-nums text-slate-900">{kpi.underReview}</span>
+                  </div>
+                  <div className={KPI_STAT_TILE_CLASS} aria-label={`Cases needing your attention: ${kpi.needsAttention}`}>
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Needs your attention</span>
+                    <span className="text-2xl font-semibold tabular-nums text-slate-900">{kpi.needsAttention}</span>
+                  </div>
+                  <div className={KPI_STAT_TILE_CLASS} aria-label={`Completed cases: ${kpi.done}`}>
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Done</span>
+                    <span className="text-2xl font-semibold tabular-nums text-slate-900">{kpi.done}</span>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-3">
+                  <article className="evidence-shell surface-lift p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className={DASHBOARD_COLUMN_TITLE_CLASS}>Alerts</h3>
+                      <Link href="/my-cases?tab=alerts" className="text-xs font-medium text-[var(--brand-700)] hover:underline">
+                        View all
+                      </Link>
+                    </div>
+                    {myAlerts.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-600">
+                        No alert assignments yet. Use “Assign to me” on an alert or wait for a staff assignment.
+                      </p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-slate-200/80 border-t border-slate-200/80 text-sm">
+                        {myAlerts.map((a) => (
+                          <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <Link
+                                href={`/alerts/${a.id}`}
+                                className="min-w-0 truncate font-semibold text-[var(--brand-700)] hover:underline"
+                              >
+                                Alert {a.id}
+                              </Link>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className={`ui-badge ${assignmentSourceBadgeClass(a.assignment_source)}`}>
+                                  {formatAssignmentSourceLabel(a.assignment_source)}
+                                </span>
+                                {a.priority ? (
+                                  <span className={`ui-badge ${assignmentPriorityBadgeClass(a.priority)}`}>
+                                    {a.priority}
+                                  </span>
+                                ) : null}
+                                {a.due_at ? <span className="ui-badge ui-badge-amber">Due {formatDate(a.due_at)}</span> : null}
+                              </div>
+                            </div>
+                            {canUnassignSelf(a.assignment_source) ? (
+                              <button
+                                type="button"
+                                disabled={alertUnassignBusyId === a.id}
+                                onClick={() => void unassignAlertSelf(a)}
+                                className="ui-btn ui-btn-secondary h-auto min-h-0 shrink-0 px-3 py-1.5 text-[11px] font-medium text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {alertUnassignBusyId === a.id ? "…" : "Unassign"}
+                              </button>
+                            ) : (
+                              <span className="text-[11px] font-medium text-slate-400">Staff-managed</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                  <article className="evidence-shell surface-lift p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className={DASHBOARD_COLUMN_TITLE_CLASS}>Watchlist</h3>
+                      <Link href="/my-cases?tab=watchlist" className="text-xs font-medium text-[var(--brand-700)] hover:underline">
+                        View all
+                      </Link>
+                    </div>
+                    {watchedUsers.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-600">
+                        No users on your watchlist. Add one with “Watch user” on a simulator profile. Remove entries here with Unwatch.
+                      </p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-slate-200/80 border-t border-slate-200/80 text-sm">
+                        {watchedUsers.map((u) => (
+                          <li key={u.id} className="flex items-center justify-between gap-2 py-2.5">
+                            <Link
+                              href={`/users/${u.id}`}
+                              className="min-w-0 truncate font-semibold text-[var(--brand-700)] hover:underline"
+                            >
+                              {u.full_name?.trim() || u.email || u.id}
+                            </Link>
+                            <button
+                              type="button"
+                              disabled={watchRemoveBusyId === u.id}
+                              onClick={() => void removeSimulatorFromWatchlist(u.id)}
+                              aria-label={`Unwatch ${u.full_name?.trim() || u.email || u.id}`}
+                              className="ui-btn ui-btn-secondary h-auto min-h-0 shrink-0 px-3 py-1.5 text-[11px] font-medium text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {watchRemoveBusyId === u.id ? "…" : "Unwatch"}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                  <article className="evidence-shell surface-lift p-5 xl:col-span-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className={DASHBOARD_COLUMN_TITLE_CLASS}>Cases</h3>
+                      <Link href="/my-cases" className="text-xs font-medium text-[var(--brand-700)] hover:underline">
+                        View all
+                      </Link>
+                    </div>
+                    {dashboardCases.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-600">Open Review from an alert or user to start a case.</p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-slate-200/80 border-t border-slate-200/80 text-sm">
+                        {dashboardCases.map((t) => (
+                          <li key={t.threadId} className="flex flex-nowrap items-center justify-between gap-3 py-2.5">
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                              <Link
+                                href={t.targetHref}
+                                className="min-w-0 truncate font-semibold text-[var(--brand-700)] hover:underline"
+                              >
+                                {t.targetLabel}
+                              </Link>
+                              <span className="shrink-0 text-slate-500">-</span>
+                              <span className="text-slate-600">{formatTraineeCasePhaseLabel(t.casePhase)}</span>
+                            </div>
+                            <span className="shrink-0 text-xs tabular-nums text-slate-500">{formatDate(t.updatedAt)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                </div>
+              </>
             )}
           </section>
-        ) : null}
-
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {metricCards.map((card) => (
-            <article
-              key={card.title}
-              className="surface-lift rounded-xl bg-slate-50 p-5 shadow-[0_8px_18px_rgba(15,23,42,0.09)] transition-shadow duration-150"
-            >
-              <p className="field-label">{card.title}</p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-800">{card.value}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-2">
-          <article className="surface-lift rounded-xl bg-slate-100 p-5 shadow-[0_8px_18px_rgba(15,23,42,0.08)] transition-shadow duration-150">
-            <h2 className="text-lg font-semibold text-slate-900">Simulator Scope</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-700">
-              Practice triage, profile reviews, and alert decisions with synthetic risk data in a controlled environment. This
-              is an internal training UI and not connected to production controls.
-            </p>
-          </article>
-          <article className="surface-lift rounded-xl bg-slate-100 p-5 shadow-[0_8px_18px_rgba(15,23,42,0.08)] transition-shadow duration-150">
-            <h2 className="text-lg font-semibold text-slate-900">Quick Access</h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Link
-                href="/guide"
-                className="rounded-md bg-slate-50 px-2.5 py-1.5 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200"
-              >
-                Open Guide
-              </Link>
-              <Link
-                href="/about"
-                className="rounded-md bg-slate-50 px-2.5 py-1.5 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200"
-              >
-                About RiskOps Lab
-              </Link>
-            </div>
-          </article>
-        </section>
+        ) : (
+          <p className="text-sm text-slate-600">
+            Use the navigation to open{" "}
+            <Link href="/alerts" className="font-medium text-[var(--brand-700)] hover:underline">
+              Alerts
+            </Link>
+            ,{" "}
+            <Link href="/users" className="font-medium text-[var(--brand-700)] hover:underline">
+              Users
+            </Link>
+            , or other tools available for your role.
+          </p>
+        )}
       </div>
     </div>
   );

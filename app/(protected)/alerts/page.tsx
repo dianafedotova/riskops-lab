@@ -1,14 +1,19 @@
 "use client";
 
+import { ModalShell } from "@/components/modal-shell";
 import { QueryErrorBanner } from "@/components/query-error";
+import { SimulatorAlertForm } from "@/components/simulator-alert-form";
+import { SimulatorAlertImportModal } from "@/components/simulator-alert-import-modal";
+import { FilterSelect } from "@/components/filter-select";
 import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { formatDate } from "@/lib/format";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
-import { canSeeStaffActionControls } from "@/lib/permissions/checks";
+import { useCurrentUser } from "@/components/current-user-provider";
+import { canSeeStaffActionControls, canSeeTraineeWorkspace } from "@/lib/permissions/checks";
+import { listAssignedAlertsForTrainee, unassignAlertFromTraineeSelf } from "@/lib/services/assignments";
 import { TABLE_PY } from "@/lib/table-padding";
 import { createClient } from "@/lib/supabase";
-import type { AlertRow } from "@/lib/types";
+import type { AlertRow, ImportedSimulatorAlertRow } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -18,11 +23,40 @@ type AlertWithRuleName = AlertRow & { rule_name?: string | null };
 const ALERT_LIST_LIMIT = 2000;
 /** Omit legacy `type` — some DBs only have `alert_type`. UI uses `alert_type ?? type`. */
 const ALERT_LIST_COLS =
-  "id, internal_id, user_id, alert_type, severity, status, description, rule_code, rule_name, created_at" as const;
+  "id, internal_id, user_id, alert_type, severity, status, description, rule_code, rule_name, created_at, alert_date" as const;
+
+const ALERT_TYPE_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "fraud", label: "Fraud" },
+  { value: "aml", label: "AML" },
+] as const;
+
+const ALERT_SEVERITY_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "Low", label: "Low" },
+  { value: "Medium", label: "Medium" },
+  { value: "High", label: "High" },
+  { value: "Critical", label: "Critical" },
+] as const;
+
+const ALERT_STATUS_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "Open", label: "Open" },
+  { value: "Monitoring", label: "Monitoring" },
+  { value: "Escalated", label: "Escalated" },
+  { value: "Closed", label: "Closed" },
+] as const;
+
+const PAGE_SIZE_OPTIONS = [
+  { value: "10", label: "10" },
+  { value: "25", label: "25" },
+  { value: "50", label: "50" },
+] as const;
 
 export default function AlertsPage() {
   const { appUser } = useCurrentUser();
   const canViewStaffActions = canSeeStaffActionControls(appUser?.role);
+  const canUseTraineeWorkspace = canSeeTraineeWorkspace(appUser?.role);
   const router = useRouter();
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +68,13 @@ export default function AlertsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | string>("all");
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [page, setPage] = useState(1);
+  const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [generatedAlerts, setGeneratedAlerts] = useState<ImportedSimulatorAlertRow[]>([]);
+  const [generatedAlertsTitle, setGeneratedAlertsTitle] = useState<string | null>(null);
+  const [myAssignedAlertIds, setMyAssignedAlertIds] = useState<Set<string>>(() => new Set());
+  const [unassignBusyId, setUnassignBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +85,7 @@ export default function AlertsPage() {
       const { data, error: qError } = await supabase
         .from("alerts")
         .select(ALERT_LIST_COLS)
+        .order("alert_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(ALERT_LIST_LIMIT);
       if (cancelled) return;
@@ -59,6 +101,27 @@ export default function AlertsPage() {
       cancelled = true;
     };
   }, [reloadTick]);
+
+  useEffect(() => {
+    if (!appUser || !canUseTraineeWorkspace) {
+      setMyAssignedAlertIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { alerts: assigned, error: assignErr } = await listAssignedAlertsForTrainee(supabase, appUser.id);
+      if (cancelled) return;
+      if (assignErr) {
+        setMyAssignedAlertIds(new Set());
+        return;
+      }
+      setMyAssignedAlertIds(new Set(assigned.map((a) => a.id)));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appUser, canUseTraineeWorkspace, reloadTick]);
 
   const hint = (
     <div className="space-y-1 text-xs text-rose-800/90">
@@ -136,170 +199,276 @@ export default function AlertsPage() {
     setPage(1);
   };
 
+  const copyUserId = async (userId: string) => {
+    await navigator.clipboard.writeText(userId);
+    setCopiedUserId(userId);
+    setTimeout(() => {
+      setCopiedUserId((current) => (current === userId ? null : current));
+    }, 1500);
+  };
+
+  const handleAlertCreated = (alert: AlertRow) => {
+    setCreateOpen(false);
+    setGeneratedAlerts([
+      {
+        id: alert.id,
+        user_id: alert.user_id ?? null,
+        alert_type: alert.alert_type ?? alert.type ?? null,
+        severity: alert.severity ?? null,
+        status: alert.status ?? null,
+      },
+    ]);
+    setGeneratedAlertsTitle("Alert created");
+    setReloadTick((tick) => tick + 1);
+  };
+
+  const handleAlertsImported = (created: ImportedSimulatorAlertRow[]) => {
+    setImportOpen(false);
+    setGeneratedAlerts(created);
+    setGeneratedAlertsTitle(created.length === 1 ? "1 alert imported" : `${created.length} alerts imported`);
+    setReloadTick((tick) => tick + 1);
+  };
+
+  const unassignSelf = async (alert: AlertRow) => {
+    if (!appUser) return;
+    setUnassignBusyId(alert.id);
+    try {
+      const supabase = createClient();
+      const { error: uErr } = await unassignAlertFromTraineeSelf(supabase, appUser.id, {
+        publicId: alert.id,
+        internalId: alert.internal_id ?? null,
+      });
+      if (uErr) throw uErr;
+      setMyAssignedAlertIds((prev) => {
+        const next = new Set(prev);
+        next.delete(alert.id);
+        return next;
+      });
+    } catch {
+      setError("Could not unassign this alert.");
+    } finally {
+      setUnassignBusyId(null);
+    }
+  };
+
   const typeBadgeClass = (type: string | null | undefined) =>
-    normalizeStr(type) === "aml" ? "bg-indigo-100 text-indigo-700" : "bg-cyan-100 text-cyan-700";
+    normalizeStr(type) === "aml" ? "ui-badge-indigo" : "ui-badge-blue";
 
   const severityBadgeClass = (severity: string | null) => {
     const s = normalizeStr(severity);
-    if (s === "critical") return "bg-rose-200 text-rose-800";
-    if (s === "high") return "bg-rose-100 text-rose-700";
-    if (s === "medium") return "bg-amber-100 text-amber-700";
-    if (s === "low") return "bg-emerald-100 text-emerald-700";
-    return "bg-slate-200 text-slate-700";
+    if (s === "critical") return "ui-badge-rose";
+    if (s === "high") return "ui-badge-rose";
+    if (s === "medium") return "ui-badge-amber";
+    if (s === "low") return "ui-badge-emerald";
+    return "ui-badge-neutral";
   };
 
   const statusBadgeClass = (status: string | null) => {
     const s = normalizeStr(status);
-    if (s === "open") return "bg-sky-100 text-sky-700";
-    if (s === "monitoring") return "bg-amber-100 text-amber-700";
-    if (s === "escalated") return "bg-violet-100 text-violet-700";
-    if (s === "closed") return "bg-emerald-100 text-emerald-700";
-    return "bg-slate-200 text-slate-700";
+    if (s === "open") return "ui-badge-blue";
+    if (s === "monitoring") return "ui-badge-amber";
+    if (s === "escalated") return "ui-badge-violet";
+    if (s === "closed") return "ui-badge-emerald";
+    return "ui-badge-neutral";
   };
 
   return (
     <section className="page-panel surface-lift space-y-4 p-4 sm:p-6">
-      <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <h1 className="heading-page">Alerts</h1>
+      <div className="w-full min-w-0 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-1">
+        <div>
+          <h1 className="heading-page">Alerts</h1>
+        </div>
         {canViewStaffActions ? (
-          <button
-            type="button"
-            className="min-h-11 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-slate-100 transition-colors duration-150 hover:bg-brand-500 sm:min-h-0 sm:px-3 sm:py-1.5"
-          >
-            Create Alert
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="ui-btn ui-btn-secondary"
+            >
+              Import Alerts CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="ui-btn ui-btn-primary"
+            >
+              Create Alert
+            </button>
+          </div>
         ) : null}
       </div>
+
+      {generatedAlerts.length > 0 ? (
+        <div className="workspace-shell space-y-4 p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold tracking-[-0.02em] text-slate-900">
+                {generatedAlertsTitle ?? "Latest alert imports"}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setGeneratedAlerts([]);
+                setGeneratedAlertsTitle(null);
+              }}
+              className="rounded-[0.95rem] border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-[1rem] border border-slate-200/80 bg-white/90">
+            <div className="scroll-x-touch">
+              <table className="w-full min-w-[620px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/90 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3">Alert ID</th>
+                    <th className="px-4 py-3">User ID</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Severity</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {generatedAlerts.map((alert) => (
+                    <tr key={alert.id} className="border-b border-slate-200/70 last:border-b-0">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-700">{alert.id}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-600">{alert.user_id ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-700">{alert.alert_type ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-700">{alert.severity ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-700">{alert.status ?? "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/alerts/${alert.id}`)}
+                          className="ui-btn ui-btn-secondary min-h-0 rounded-[0.85rem] px-3 py-1.5 text-xs"
+                        >
+                          Open alert
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {error && (
         <QueryErrorBanner message={error} onRetry={() => setReloadTick((n) => n + 1)} hint={hint} />
       )}
 
-      <div className="min-w-0 overflow-visible rounded-xl border border-slate-200/90 bg-slate-50/70 p-3 shadow-sm">
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
-        <div className="flex min-w-0 flex-col gap-1 sm:w-72 sm:shrink-0">
-          <label htmlFor="alerts-search" className="text-xs font-medium text-slate-600">
-            Search
-          </label>
-          <input
-            id="alerts-search"
-            type="text"
-            placeholder="Search by Alert ID or User ID..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setPage(1);
-            }}
-            className="h-10 w-full min-w-0 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-colors duration-150 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
-          />
-        </div>
-        <div className="flex min-w-0 flex-wrap items-end gap-x-2 gap-y-2 sm:gap-x-2.5">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="alerts-type-filter" className="text-xs font-medium text-slate-600">
-              Type
+      <div className="workspace-shell flex flex-col gap-3 min-w-0 overflow-visible p-4 sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
+          <div className="min-w-0 w-full max-w-md flex-1">
+            <label htmlFor="alerts-search" className="mb-1 block pl-3 text-sm font-medium text-slate-600">
+              Search alerts
             </label>
-            <select
-              id="alerts-type-filter"
-              value={typeFilter}
+            <input
+              id="alerts-search"
+              type="text"
+              placeholder="Search by Alert ID or User ID..."
+              value={query}
               onChange={(e) => {
-                setTypeFilter(e.target.value as "all" | "fraud" | "aml");
+                setQuery(e.target.value);
                 setPage(1);
               }}
-              className="h-10 min-w-[5.5rem] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
-            >
-              <option value="all">All</option>
-              <option value="fraud">Fraud</option>
-              <option value="aml">AML</option>
-            </select>
+              className="dark-input h-10 w-full rounded-[0.65rem] px-4 text-sm text-slate-800 outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
+            />
           </div>
+          <div className="flex flex-wrap items-end gap-x-2.5 gap-y-2.5 sm:gap-x-3 lg:flex-nowrap lg:justify-end">
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="pl-3 text-sm font-medium text-slate-600">Type</span>
+              <FilterSelect
+                ariaLabel="Alert type"
+                value={typeFilter}
+                onChange={(nextValue) => {
+                  setTypeFilter(nextValue as "all" | "fraud" | "aml");
+                  setPage(1);
+                }}
+                options={[...ALERT_TYPE_OPTIONS]}
+                className="w-[min(100%,9rem)] min-w-[7.5rem]"
+              />
+            </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="alerts-severity-filter" className="text-xs font-medium text-slate-600">
-              Severity
-            </label>
-            <select
-              id="alerts-severity-filter"
-              value={severityFilter}
-              onChange={(e) => {
-                setSeverityFilter(e.target.value);
-                setPage(1);
-              }}
-              className="h-10 min-w-[5.5rem] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="pl-3 text-sm font-medium text-slate-600">Severity</span>
+              <FilterSelect
+                ariaLabel="Alert severity"
+                value={severityFilter}
+                onChange={(nextValue) => {
+                  setSeverityFilter(nextValue);
+                  setPage(1);
+                }}
+                options={[...ALERT_SEVERITY_OPTIONS]}
+                className="w-[min(100%,8rem)] min-w-[7rem]"
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="pl-3 text-sm font-medium text-slate-600">Status</span>
+              <FilterSelect
+                ariaLabel="Alert status"
+                value={statusFilter}
+                onChange={(nextValue) => {
+                  setStatusFilter(nextValue);
+                  setPage(1);
+                }}
+                options={[...ALERT_STATUS_OPTIONS]}
+                className="w-[min(100%,8rem)] min-w-[7rem]"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={resetFilters}
+              disabled={!isFiltersActive}
+              className="ui-btn ui-btn-secondary ui-filter-reset h-10 min-h-0 shrink-0 self-end rounded-[0.65rem] px-4 text-sm font-medium disabled:cursor-default"
             >
-              <option value="all">All</option>
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-              <option value="Critical">Critical</option>
-            </select>
+              Reset filters
+            </button>
           </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="alerts-status-filter" className="text-xs font-medium text-slate-600">
-              Status
-            </label>
-            <select
-              id="alerts-status-filter"
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className="h-10 min-w-[5.5rem] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition-colors duration-150 hover:bg-slate-50 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20"
-            >
-              <option value="all">All</option>
-              <option value="Open">Open</option>
-              <option value="Monitoring">Monitoring</option>
-              <option value="Escalated">Escalated</option>
-              <option value="Closed">Closed</option>
-            </select>
-          </div>
-
-          <button
-            type="button"
-            onClick={resetFilters}
-            disabled={!isFiltersActive}
-            className="h-10 shrink-0 rounded-lg bg-slate-100 px-3 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Reset filters
-          </button>
-        </div>
         </div>
       </div>
 
-      <div className="min-w-0 overflow-hidden rounded-xl bg-slate-50/50 shadow-sm">
+      <div className="workspace-shell min-w-0 overflow-hidden p-0">
         <TableSwipeHint />
         <div className="scroll-x-touch">
-        <table className="w-full min-w-[720px] table-fixed border-collapse text-sm">
+        <table className="w-full min-w-[860px] table-fixed border-collapse text-sm">
           <colgroup>
-            <col className="w-[9%]" />
-            <col className="w-[10%]" />
-            <col className="w-[18%]" />
             <col className="w-[8%]" />
             <col className="w-[9%]" />
-            <col className="w-[10%]" />
-            <col className="min-w-[140px] w-[36%]" />
+            <col className="w-[20%]" />
+            <col className="w-[7%]" />
+            <col className="w-[8%]" />
+            <col className="w-[8%]" />
+            <col className="min-w-[120px] w-[28%]" />
+            {canUseTraineeWorkspace ? <col className="w-[12%]" /> : null}
           </colgroup>
           <thead>
             <tr className="sticky top-0 z-10 border-b border-slate-300 bg-slate-200/95 text-left text-xs uppercase tracking-wide text-slate-600 backdrop-blur-sm">
               <th className={`px-4 ${TABLE_PY}`}>Alert ID</th>
-              <th className={`px-4 ${TABLE_PY}`}>Created</th>
+              <th className={`px-4 ${TABLE_PY}`}>Alert Date</th>
               <th className={`px-4 ${TABLE_PY}`}>User ID</th>
               <th className={`px-4 ${TABLE_PY}`}>Type</th>
               <th className={`px-4 ${TABLE_PY}`}>Severity</th>
               <th className={`px-4 ${TABLE_PY}`}>Status</th>
               <th className={`px-4 ${TABLE_PY}`}>Description</th>
+              {canUseTraineeWorkspace ? <th className={`px-4 ${TABLE_PY}`}>Actions</th> : null}
             </tr>
           </thead>
           {loading ? (
-            <TableSkeleton rows={8} cols={7} />
+            <TableSkeleton rows={8} cols={canUseTraineeWorkspace ? 8 : 7} />
           ) : (
             <tbody>
               {totalFiltered === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8">
-                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
+                  <td colSpan={canUseTraineeWorkspace ? 8 : 7} className="px-4 py-8">
+                    <div className="rounded-[1.2rem] border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
                       No alerts yet.
                     </div>
                   </td>
@@ -314,28 +483,92 @@ export default function AlertsPage() {
                     }`}
                   >
                     <td className={`px-4 font-mono text-xs ${TABLE_PY}`}>{alert.id}</td>
-                    <td className={`px-4 tabular-nums text-slate-600 ${TABLE_PY}`}>{formatDate(alert.created_at)}</td>
-                    <td className={`px-4 font-mono text-xs ${TABLE_PY} overflow-hidden text-ellipsis whitespace-nowrap`} title={alert.user_id ?? "—"}>
-                      {alert.user_id ?? "—"}
+                    <td className={`px-4 tabular-nums text-slate-600 ${TABLE_PY}`}>{formatDate(alert.alert_date ?? alert.created_at)}</td>
+                    <td className={`px-4 font-mono text-xs text-slate-600 ${TABLE_PY}`}>
+                      {alert.user_id ? (
+                        <div className="flex items-start gap-1.5">
+                          <span className="min-w-0 break-all whitespace-normal">{alert.user_id}</span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void copyUserId(alert.user_id!);
+                            }}
+                            className="mt-0.5 shrink-0 rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                            title={copiedUserId === alert.user_id ? "Copied" : "Copy user ID"}
+                            aria-label={copiedUserId === alert.user_id ? "Copied user ID" : "Copy user ID"}
+                          >
+                            {copiedUserId === alert.user_id ? (
+                              <svg
+                                viewBox="0 0 16 16"
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <path d="m3.5 8 2.6 2.6 6.4-6.4" />
+                              </svg>
+                            ) : (
+                              <svg
+                                viewBox="0 0 16 16"
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <rect x="5" y="3.5" width="7" height="9" rx="1.3" />
+                                <path d="M3.5 10.5h-.3A1.7 1.7 0 0 1 1.5 8.8V3.2c0-.94.76-1.7 1.7-1.7h4.6c.94 0 1.7.76 1.7 1.7v.3" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className={`px-4 ${TABLE_PY}`}>
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${typeBadgeClass(getAlertType(alert))}`}>
+                      <span className={`ui-badge text-[11px] ${typeBadgeClass(getAlertType(alert))}`}>
                         {normalizeStr(getAlertType(alert)) ? normalizeStr(getAlertType(alert)).toUpperCase() : "—"}
                       </span>
                     </td>
                     <td className={`px-4 ${TABLE_PY}`}>
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${severityBadgeClass(alert.severity)}`}>
+                      <span className={`ui-badge text-[11px] ${severityBadgeClass(alert.severity)}`}>
                         {toTitleCase(alert.severity)}
                       </span>
                     </td>
                     <td className={`px-4 ${TABLE_PY}`}>
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(alert.status)}`}>
+                      <span className={`ui-badge text-[11px] ${statusBadgeClass(alert.status)}`}>
                         {toTitleCase(alert.status)}
                       </span>
                     </td>
                     <td className={`px-4 ${TABLE_PY} min-w-0 whitespace-normal break-words`} title={getDescription(alert as AlertWithRuleName)}>
                       {getDescription(alert as AlertWithRuleName)}
                     </td>
+                    {canUseTraineeWorkspace ? (
+                      <td className={`px-4 ${TABLE_PY}`}>
+                        {myAssignedAlertIds.has(alert.id) ? (
+                          <button
+                            type="button"
+                            disabled={unassignBusyId === alert.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void unassignSelf(alert);
+                            }}
+                            className="ui-btn ui-btn-secondary h-auto min-h-0 px-2.5 py-1 text-[11px] font-medium disabled:opacity-50"
+                          >
+                            {unassignBusyId === alert.id ? "…" : "Unassign"}
+                          </button>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                 ))
               )}
@@ -354,44 +587,66 @@ export default function AlertsPage() {
               : `Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(currentPage * itemsPerPage, totalFiltered)} of ${totalFiltered} alerts`}
         </p>
         <div className="flex items-center gap-2">
-          <label htmlFor="alerts-per-page">Items per page</label>
-          <select
-            id="alerts-per-page"
-            value={itemsPerPage}
-            onChange={(e) => {
-              setItemsPerPage(Number(e.target.value));
+          <span>Items per page</span>
+          <FilterSelect
+            ariaLabel="Alerts items per page"
+            value={String(itemsPerPage)}
+            onChange={(nextValue) => {
+              setItemsPerPage(Number(nextValue));
               setPage(1);
             }}
-            className="rounded-md bg-slate-100 px-2 py-1 shadow-sm"
-          >
-            <option>10</option>
-            <option>25</option>
-            <option>50</option>
-          </select>
+            options={[...PAGE_SIZE_OPTIONS]}
+            className="ui-page-size min-w-[4.25rem]"
+            menuClassName="left-auto right-0 min-w-[4.5rem]"
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={currentPage <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="rounded-md bg-slate-100 px-2.5 py-1 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <button type="button" className="rounded-md bg-slate-200 px-2.5 py-1 text-sm text-slate-700 shadow-sm">
-            {currentPage}
-          </button>
-          <button
-            type="button"
-            disabled={currentPage >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="rounded-md bg-slate-100 px-2.5 py-1 text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
+        {totalPages > 1 ? (
+          <div className="flex items-center gap-2">
+            {currentPage > 1 ? (
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="ui-pager-btn"
+              >
+                Previous
+              </button>
+            ) : null}
+            <button type="button" className="ui-pager-current">
+              {currentPage}
+            </button>
+            <button
+              type="button"
+              disabled={currentPage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="ui-pager-btn"
+            >
+              Next
+            </button>
+          </div>
+        ) : null}
       </div>
       </div>
+      {importOpen && canViewStaffActions ? (
+        <SimulatorAlertImportModal
+          viewer={appUser}
+          onClose={() => setImportOpen(false)}
+          onImported={handleAlertsImported}
+        />
+      ) : null}
+      {createOpen && canViewStaffActions ? (
+        <ModalShell
+          title="Create alert"
+          onClose={() => setCreateOpen(false)}
+        >
+          <SimulatorAlertForm
+            viewer={appUser}
+            mode="create"
+            submitLabel="Create alert"
+            onSaved={handleAlertCreated}
+            onCancel={() => setCreateOpen(false)}
+          />
+        </ModalShell>
+      ) : null}
     </section>
   );
 }

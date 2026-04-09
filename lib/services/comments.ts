@@ -1,12 +1,15 @@
-import type { AppUserRole } from "@/lib/app-user-role";
+import { isSuperAdmin, type AppUserRole } from "@/lib/app-user-role";
 import { canCreatePrivateNotes, canReplyAsQA, canViewPrivateNotes, canWriteTraineeDiscussion } from "@/lib/permissions/checks";
+import { buildRichNoteStorageFields } from "@/lib/rich-note";
 import { recordAppUserActivity } from "@/lib/services/app-user-activity";
 import type {
   PersistedWorkflowAuthorRole,
   PrivateNoteCommentRow,
+  RichNoteFormat,
   ReviewDiscussionCommentRow,
   SimulatorCommentRow,
 } from "@/lib/types";
+import type { JSONContent } from "@tiptap/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AdminPrivateNoteRow = {
@@ -17,6 +20,8 @@ type AdminPrivateNoteRow = {
   author_role: PersistedWorkflowAuthorRole;
   parent_note_id: string | null;
   body: string;
+  body_json?: JSONContent | null;
+  body_format?: RichNoteFormat | null;
   is_edited?: boolean | null;
   is_deleted?: boolean | null;
   created_at: string;
@@ -36,6 +41,7 @@ export type PrivateNoteTarget = {
 export type CommentPanelData = {
   discussionComments: SimulatorCommentRow[];
   privateNotes: SimulatorCommentRow[];
+  authorLabels: Record<string, string>;
 };
 
 function mapPrivateNote(row: AdminPrivateNoteRow): PrivateNoteCommentRow {
@@ -46,10 +52,12 @@ function mapPrivateNote(row: AdminPrivateNoteRow): PrivateNoteCommentRow {
     user_id: row.user_id,
     alert_id: row.alert_id,
     author_app_user_id: row.author_app_user_id,
-    author_role: "admin",
+    author_role: row.author_role,
     comment_type: "admin_private",
     parent_comment_id: null,
     body: row.body,
+    body_json: row.body_json ?? null,
+    body_format: row.body_format ?? "plain_text",
     created_at: row.created_at,
     updated_at: row.updated_at ?? null,
   };
@@ -89,9 +97,8 @@ export async function listVisiblePrivateNotes(
   let query = supabase
     .from("admin_private_notes")
     .select(
-      "id, user_id, alert_id, author_app_user_id, author_role, parent_note_id, body, is_edited, is_deleted, created_at, updated_at"
+      "id, user_id, alert_id, author_app_user_id, author_role, parent_note_id, body, body_json, body_format, is_edited, is_deleted, created_at, updated_at"
     )
-    .eq("author_role", "admin")
     .order("created_at", { ascending: false });
 
   if (viewer.role !== "super_admin") {
@@ -137,15 +144,50 @@ export async function loadCommentPanelData(
 
   if (discussion.error) {
     return {
-      data: { discussionComments: [], privateNotes: [] },
+      data: { discussionComments: [], privateNotes: [], authorLabels: {} },
       error: discussion.error,
     };
+  }
+
+  const authorIds = Array.from(
+    new Set(
+      [...discussion.comments, ...privateNotes.notes]
+        .map((comment) => comment.author_app_user_id)
+        .filter(Boolean)
+    )
+  );
+
+  let authorLabels: Record<string, string> = {};
+  if (authorIds.length > 0) {
+    let rows: { id: string; email: string | null; full_name?: string | null }[] = [];
+    const withFullName = await supabase
+      .from("app_users")
+      .select("id, email, full_name")
+      .in("id", authorIds);
+
+    if (withFullName.error) {
+      const fallback = await supabase
+        .from("app_users")
+        .select("id, email")
+        .in("id", authorIds);
+      rows = (fallback.data as { id: string; email: string | null }[]) ?? [];
+    } else {
+      rows = (withFullName.data as { id: string; email: string | null; full_name?: string | null }[]) ?? [];
+    }
+
+    authorLabels = {};
+    for (const row of rows) {
+      const fullName = (row.full_name ?? "").trim();
+      const email = (row.email ?? "").trim();
+      authorLabels[row.id] = fullName && email ? `${fullName} · ${email}` : (fullName || email || "user");
+    }
   }
 
   return {
     data: {
       discussionComments: discussion.comments,
       privateNotes: privateNotes.notes,
+      authorLabels,
     },
     error: privateNotes.error,
   };
@@ -153,26 +195,45 @@ export async function loadCommentPanelData(
 
 export async function addTraineeDiscussionComment(
   supabase: SupabaseClient,
-  args: { threadId: string | null; authorAppUserId: string; role: AppUserRole | null; body: string }
+  args: {
+    threadId: string | null;
+    authorAppUserId: string;
+    role: AppUserRole | null;
+    body: string;
+    bodyJson?: JSONContent | null;
+    bodyFormat?: RichNoteFormat | null;
+  }
 ) {
   if (!canWriteTraineeDiscussion(args.role)) {
     throw new Error("Only trainees can add discussion notes.");
   }
   if (!args.threadId) {
-    throw new Error("No review thread yet. Wait a moment or refresh the page.");
+    throw new Error("No cases for review yet. Wait a moment or refresh the page.");
   }
   if (!args.body.trim()) return;
 
-  const { error } = await supabase.from("simulator_comments").insert({
-    thread_id: args.threadId,
-    author_app_user_id: args.authorAppUserId,
-    author_role: "trainee",
-    comment_type: "user_comment",
-    parent_comment_id: null,
-    body: args.body.trim(),
+  const richBodyFields = buildRichNoteStorageFields({
+    body: args.body,
+    bodyJson: args.bodyJson,
+    bodyFormat: args.bodyFormat,
   });
 
+  const { data, error } = await supabase
+    .from("simulator_comments")
+    .insert({
+      thread_id: args.threadId,
+      author_app_user_id: args.authorAppUserId,
+      author_role: "trainee",
+      comment_type: "user_comment",
+      parent_comment_id: null,
+      ...richBodyFields,
+    })
+    .select("id")
+    .single();
+
   if (error) throw error;
+
+  return data?.id ? String(data.id) : null;
 }
 
 export async function addTraineeDiscussionReply(
@@ -183,15 +244,23 @@ export async function addTraineeDiscussionReply(
     authorAppUserId: string;
     role: AppUserRole | null;
     body: string;
+    bodyJson?: JSONContent | null;
+    bodyFormat?: RichNoteFormat | null;
   }
 ) {
   if (!canWriteTraineeDiscussion(args.role)) {
     throw new Error("Only trainees can reply in trainee discussion.");
   }
   if (!args.threadId) {
-    throw new Error("No review thread yet. Wait a moment or refresh the page.");
+    throw new Error("No cases for review yet. Wait a moment or refresh the page.");
   }
   if (!args.body.trim()) return;
+
+  const richBodyFields = buildRichNoteStorageFields({
+    body: args.body,
+    bodyJson: args.bodyJson,
+    bodyFormat: args.bodyFormat,
+  });
 
   const { error } = await supabase.from("simulator_comments").insert({
     thread_id: args.threadId,
@@ -199,7 +268,7 @@ export async function addTraineeDiscussionReply(
     author_role: "trainee",
     comment_type: "user_comment",
     parent_comment_id: args.parentCommentId,
-    body: args.body.trim(),
+    ...richBodyFields,
   });
 
   if (error) throw error;
@@ -213,27 +282,35 @@ export async function addStaffQaReply(
     authorAppUserId: string;
     role: AppUserRole | null;
     body: string;
+    bodyJson?: JSONContent | null;
+    bodyFormat?: RichNoteFormat | null;
   }
 ) {
   if (!canReplyAsQA(args.role)) {
     throw new Error("Only staff can send QA replies.");
   }
   if (!args.threadId) {
-    throw new Error("No review thread yet.");
+    throw new Error("No cases for review yet.");
   }
   if (!args.body.trim()) return;
+
+  const richBodyFields = buildRichNoteStorageFields({
+    body: args.body,
+    bodyJson: args.bodyJson,
+    bodyFormat: args.bodyFormat,
+  });
 
   const { error } = await supabase.from("simulator_comments").insert({
     thread_id: args.threadId,
     author_app_user_id: args.authorAppUserId,
-    author_role: "admin",
+    author_role: args.role ?? "reviewer",
     comment_type: "admin_qa",
     parent_comment_id: args.parentCommentId,
-    body: args.body.trim(),
+    ...richBodyFields,
   });
 
   if (error) throw error;
-  await recordAppUserActivity(supabase, {
+  void recordAppUserActivity(supabase, {
     appUserId: args.authorAppUserId,
     eventType: "qa_reply_created",
     meta: {
@@ -251,6 +328,8 @@ export async function updateTraineeRootDiscussionComment(
     authorAppUserId: string;
     role: AppUserRole | null;
     body: string;
+    bodyJson?: JSONContent | null;
+    bodyFormat?: RichNoteFormat | null;
   }
 ) {
   if (!canWriteTraineeDiscussion(args.role)) {
@@ -258,10 +337,16 @@ export async function updateTraineeRootDiscussionComment(
   }
   if (!args.threadId || !args.body.trim()) return;
 
+  const richBodyFields = buildRichNoteStorageFields({
+    body: args.body,
+    bodyJson: args.bodyJson,
+    bodyFormat: args.bodyFormat,
+  });
+
   const { error } = await supabase
     .from("simulator_comments")
     .update({
-      body: args.body.trim(),
+      ...richBodyFields,
       updated_at: new Date().toISOString(),
     })
     .eq("id", args.commentId)
@@ -279,6 +364,8 @@ export async function addPrivateNote(
     authorAppUserId: string;
     role: AppUserRole | null;
     body: string;
+    bodyJson?: JSONContent | null;
+    bodyFormat?: RichNoteFormat | null;
     target: PrivateNoteTarget;
   }
 ) {
@@ -290,11 +377,17 @@ export async function addPrivateNote(
     throw new Error("Private note target is missing.");
   }
 
+  const richBodyFields = buildRichNoteStorageFields({
+    body: args.body,
+    bodyJson: args.bodyJson,
+    bodyFormat: args.bodyFormat,
+  });
+
   const row: Record<string, unknown> = {
     author_app_user_id: args.authorAppUserId,
-    author_role: "admin",
+    author_role: args.role ?? "reviewer",
     parent_note_id: null,
-    body: args.body.trim(),
+    ...richBodyFields,
     is_edited: false,
     is_deleted: false,
   };
@@ -317,4 +410,71 @@ export async function addPrivateNote(
       user_id: row.user_id ?? null,
     },
   });
+}
+
+export async function updatePrivateNote(
+  supabase: SupabaseClient,
+  args: {
+    noteId: string;
+    authorAppUserId: string;
+    role: AppUserRole | null;
+    body: string;
+    bodyJson?: JSONContent | null;
+    bodyFormat?: RichNoteFormat | null;
+  }
+) {
+  if (!canCreatePrivateNotes(args.role)) {
+    throw new Error("Only staff can edit private notes.");
+  }
+  if (!args.body.trim()) return;
+
+  const richBodyFields = buildRichNoteStorageFields({
+    body: args.body,
+    bodyJson: args.bodyJson,
+    bodyFormat: args.bodyFormat,
+  });
+
+  let query = supabase
+    .from("admin_private_notes")
+    .update({
+      ...richBodyFields,
+      is_edited: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", args.noteId);
+
+  if (!isSuperAdmin(args.role)) {
+    query = query.eq("author_app_user_id", args.authorAppUserId);
+  }
+
+  const { error } = await query;
+  if (error) throw error;
+}
+
+export async function deletePrivateNote(
+  supabase: SupabaseClient,
+  args: {
+    noteId: string;
+    authorAppUserId: string;
+    role: AppUserRole | null;
+  }
+) {
+  if (!canCreatePrivateNotes(args.role)) {
+    throw new Error("Only staff can delete private notes.");
+  }
+
+  let query = supabase
+    .from("admin_private_notes")
+    .update({
+      is_deleted: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", args.noteId);
+
+  if (!isSuperAdmin(args.role)) {
+    query = query.eq("author_app_user_id", args.authorAppUserId);
+  }
+
+  const { error } = await query;
+  if (error) throw error;
 }

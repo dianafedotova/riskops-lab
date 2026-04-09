@@ -95,7 +95,7 @@ export function ProfileIdentityHeader({ appUser, displayName, subtitle }: Profil
   const avatarBox = canPick ? (
     <label
       htmlFor={inputId}
-      className="group relative mx-auto block h-32 w-32 shrink-0 cursor-pointer overflow-hidden rounded-xl ring-1 ring-slate-300/80 transition-shadow hover:ring-[#5e8d9c]/50 sm:mx-0"
+      className="group relative mx-auto block h-32 w-32 shrink-0 cursor-pointer overflow-hidden rounded-[1.2rem] ring-1 ring-slate-300/80 transition-shadow hover:ring-[var(--brand-400)]/50 sm:mx-0"
     >
       {previewUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -141,7 +141,7 @@ export function ProfileIdentityHeader({ appUser, displayName, subtitle }: Profil
       />
     </label>
   ) : (
-    <div className="relative mx-auto h-32 w-32 shrink-0 overflow-hidden rounded-xl ring-1 ring-slate-300/80 sm:mx-0">
+    <div className="relative mx-auto h-32 w-32 shrink-0 overflow-hidden rounded-[1.2rem] ring-1 ring-slate-300/80 sm:mx-0">
       <AppUserAvatar
         avatarField={appUser?.avatar_url}
         initials={initials}
@@ -172,7 +172,7 @@ export function ProfileIdentityHeader({ appUser, displayName, subtitle }: Profil
               type="button"
               disabled={busy}
               onClick={() => void onSavePhoto()}
-              className="inline-flex shrink-0 items-center justify-center rounded-md bg-[#2d5f70] px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[#234d5c] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex shrink-0 items-center justify-center rounded-[1.2rem] bg-[var(--brand-700)] px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[var(--brand-600)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? "Saving…" : "Save"}
             </button>
@@ -180,7 +180,7 @@ export function ProfileIdentityHeader({ appUser, displayName, subtitle }: Profil
               type="button"
               disabled={busy}
               onClick={resetSelection}
-              className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+              className="shrink-0 rounded-[1.2rem] px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -199,3 +199,4 @@ export function ProfileIdentityHeader({ appUser, displayName, subtitle }: Profil
     </div>
   );
 }
+

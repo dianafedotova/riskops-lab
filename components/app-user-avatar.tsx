@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { avatarsObjectPathFromDbValue, AVATARS_BUCKET } from "@/lib/storage/avatars-path";
 import { createClient } from "@/lib/supabase";
@@ -53,7 +53,7 @@ export function AppUserAvatar({ avatarField, initials, fallbackClassName, imgCla
     return (
       <span className={shell}>
         <span
-          className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-[#5e8d9c]/40 via-[#5e8d9c]/20 to-slate-300/35 font-bold text-slate-800 ${fallbackClassName ?? ""}`}
+          className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-[var(--brand-400)]/40 via-[var(--brand-400)]/20 to-slate-300/35 font-bold text-slate-800 ${fallbackClassName ?? ""}`}
           aria-hidden
         >
           {initials}
@@ -74,3 +74,4 @@ export function AppUserAvatar({ avatarField, initials, fallbackClassName, imgCla
     </span>
   );
 }
+

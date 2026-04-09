@@ -1,26 +1,18 @@
-import Link from "next/link";
-
 export default function PrivacyPage() {
   return (
-    <section className="space-y-5 rounded-2xl border border-slate-300 bg-slate-50 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section className="space-y-5 rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-panel)] p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
+      <div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--accent-stone-500)]">
             Legal
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--app-shell-bg)]">
             Privacy
           </h1>
         </div>
-        <Link
-          href="/"
-          className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
-        >
-          Back to Home
-        </Link>
       </div>
 
-      <div className="space-y-4 text-sm leading-6 text-slate-700">
+      <div className="space-y-4 text-sm leading-6 text-[var(--accent-stone-500)]">
         <p>
           RiskOps Lab uses synthetic data for training and simulation. No real
           personal or customer information is required for standard use.
@@ -40,10 +32,11 @@ export default function PrivacyPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-amber-300 bg-amber-100 p-4 text-sm text-amber-900">
+      <div className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--accent-stone-500)]">
         Privacy notice: this simulator is for internal learning and
         demonstration purposes only.
       </div>
     </section>
   );
 }
+

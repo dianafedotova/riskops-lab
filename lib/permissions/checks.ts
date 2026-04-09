@@ -1,4 +1,4 @@
-import { canAccessStaffFeatures, isTrainee, type AppUserRole } from "@/lib/app-user-role";
+import { canAccessStaffFeatures, isSuperAdmin, isTrainee, type AppUserRole } from "@/lib/app-user-role";
 
 export function canAccessAdminRoute(role: AppUserRole | string | null | undefined): boolean {
   return canAccessStaffFeatures(role);
@@ -38,4 +38,8 @@ export function canCreatePrivateNotes(role: AppUserRole | string | null | undefi
 
 export function canWriteTraineeDiscussion(role: AppUserRole | string | null | undefined): boolean {
   return isTrainee(role);
+}
+
+export function canManageAppUserIdentity(role: AppUserRole | string | null | undefined): boolean {
+  return isSuperAdmin(role);
 }

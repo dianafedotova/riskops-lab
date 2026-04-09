@@ -1,15 +1,25 @@
 "use client";
 
-import { canAccessStaffFeatures, isTrainee } from "@/lib/app-user-role";
+import { RichNoteContent } from "@/components/rich-note-content";
+import { RichNoteEditor } from "@/components/rich-note-editor";
+import { canAccessStaffFeatures, formatAppUserRoleLabel, isTrainee } from "@/lib/app-user-role";
 import { formatDateTime } from "@/lib/format";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { emitReviewSubmissionsChanged } from "@/lib/hooks/use-review-submissions";
+import { createEmptyRichNoteValue, createRichNoteEditorValue, type RichNoteEditorValue } from "@/lib/rich-note";
+import { useCurrentUser } from "@/components/current-user-provider";
 import { useSimulatorComments } from "@/lib/hooks/use-simulator-comments";
 import { canCreatePrivateNotes, canReplyAsQA, canViewPrivateNotes, canWriteTraineeDiscussion } from "@/lib/permissions/checks";
+import { submitReviewSubmission } from "@/lib/services/review-submissions";
 import { createClient } from "@/lib/supabase";
-import type { SimulatorCommentRow } from "@/lib/types";
+import type { ReviewSubmissionRow, SimulatorCommentRow } from "@/lib/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const TRAINEE_ROOT_EDIT_MS = 5 * 60 * 1000;
+
+/** Stable defaults — `= []` / `= {}` in props create new references each render and break useSimulatorComments' effect deps. */
+const EMPTY_SUBMISSIONS: ReviewSubmissionRow[] = [];
+const EMPTY_SIMULATOR_COMMENTS: SimulatorCommentRow[] = [];
+const EMPTY_AUTHOR_LABELS: Record<string, string> = {};
 
 function subtreeHasAdminQa(rootId: string, all: SimulatorCommentRow[]): boolean {
   const byParent = new Map<string, SimulatorCommentRow[]>();
@@ -38,17 +48,40 @@ type Props = {
   privateSimulatorUserId?: string | null;
   /** Heading above the panel (default: "Comments") */
   title?: string;
+  /** When set, renders this as a page-style section heading with room for save feedback on the same row (for example, a case note panel). */
+  sectionHeaderTitle?: string;
   showTitle?: boolean;
   withTopBorder?: boolean;
   emptyMessage?: string;
   adminModeOverride?: "reply" | "private";
+  highlightRootCommentId?: string | null;
+  submissions?: ReviewSubmissionRow[];
+  createThread?: (() => Promise<string | null>) | null;
+  showComposer?: boolean;
+  showItems?: boolean;
+  showStatusMessages?: boolean;
+  onDeleteDraftThread?: ((threadId: string) => Promise<void>) | null;
+  prepareTraineeThread?: ((threadId: string) => Promise<void>) | null;
+  composerTitle?: string;
+  composerDescription?: string | null;
+  flushTop?: boolean;
   predefinedNotes?: {
     id: string;
     note_text: string;
     created_at: string;
     created_by: string | null;
   }[];
+  hasInitialCommentData?: boolean;
+  initialDiscussionComments?: SimulatorCommentRow[];
+  initialPrivateNotes?: SimulatorCommentRow[];
+  initialAuthorLabels?: Record<string, string>;
+  traineeSubmittedSummaryLayout?: "default" | "alert";
+  showSubmittedSummary?: boolean;
+  showQaReplyAction?: boolean;
+  showReviewerFeedbackInThread?: boolean;
 };
+
+const EMPTY_PREDEFINED_NOTES: NonNullable<Props["predefinedNotes"]> = [];
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
@@ -63,17 +96,75 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function formatPanelActionError(message: string): string {
+  if (
+    message.includes("No cases for review yet") ||
+    message.includes("No review case yet") ||
+    message.includes("No review thread yet")
+  ) {
+    return "Review workspace is still connecting. Wait a moment and try again.";
+  }
+  return message;
+}
+
+function reviewSubmissionBadgeClass(state: string | null | undefined): string {
+  const value = (state ?? "").trim().toLowerCase();
+  if (value === "submitted") {
+    return "ui-badge-blue";
+  }
+  if (value === "in_review" || value === "in review") {
+    return "ui-badge-teal";
+  }
+  if (value === "changes_requested" || value === "changes requested") {
+    return "ui-badge-rose";
+  }
+  if (value === "approved") {
+    return "ui-badge-emerald";
+  }
+  if (value === "closed") return "ui-badge-neutral";
+  return "ui-badge-neutral";
+}
+
+const THREAD_ACTION_BASE =
+  "ui-btn min-h-0 rounded-[1rem] px-3 py-1.5 text-xs font-semibold tracking-[-0.01em] disabled:cursor-not-allowed disabled:opacity-60";
+
+const THREAD_ACTION_PRIMARY = `${THREAD_ACTION_BASE} ui-btn-primary`;
+const THREAD_ACTION_SECONDARY = `${THREAD_ACTION_BASE} ui-btn-secondary text-[var(--brand-700)]`;
+const THREAD_ACTION_SECONDARY_NEUTRAL = `${THREAD_ACTION_BASE} ui-btn-secondary`;
+const THREAD_ACTION_SAVE = `${THREAD_ACTION_BASE} border border-[rgb(178_205_201_/_0.95)] bg-[linear-gradient(180deg,rgb(248_252_251_/_0.98),rgb(236_245_244_/_0.98))] text-[var(--brand-700)] shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_6px_14px_rgba(18,31,46,0.08)] hover:border-[var(--brand-400)] hover:bg-[linear-gradient(180deg,rgb(242_249_248_/_0.98),rgb(226_240_239_/_0.98))] hover:text-[var(--brand-600)] hover:shadow-[0_8px_16px_rgba(18,31,46,0.1)]`;
+const THREAD_ACTION_DESTRUCTIVE = `${THREAD_ACTION_BASE} border border-[rgb(149_52_63_/_0.26)] bg-white text-[var(--brand-dot)] shadow-[0_2px_10px_rgba(15,23,42,0.05)] hover:border-[rgb(149_52_63_/_0.44)] hover:bg-[rgb(149_52_63_/_0.06)]`;
+
 export function SimulatorCommentsPanel({
   threadId = null,
   reviewMode = false,
   privateAlertInternalId = null,
   privateSimulatorUserId = null,
   title = "Comments",
+  sectionHeaderTitle,
   showTitle = true,
   withTopBorder = true,
   emptyMessage = "No comments yet.",
   adminModeOverride,
-  predefinedNotes = [],
+  highlightRootCommentId = null,
+  submissions = EMPTY_SUBMISSIONS,
+  createThread = null,
+  showComposer = true,
+  showItems = true,
+  showStatusMessages = true,
+  onDeleteDraftThread = null,
+  prepareTraineeThread = null,
+  composerTitle,
+  composerDescription = null,
+  flushTop = false,
+  predefinedNotes = EMPTY_PREDEFINED_NOTES,
+  hasInitialCommentData = false,
+  initialDiscussionComments = EMPTY_SIMULATOR_COMMENTS,
+  initialPrivateNotes = EMPTY_SIMULATOR_COMMENTS,
+  initialAuthorLabels = EMPTY_AUTHOR_LABELS,
+  traineeSubmittedSummaryLayout = "default",
+  showSubmittedSummary = true,
+  showQaReplyAction = true,
+  showReviewerFeedbackInThread = false,
 }: Props) {
   const { appUser, loading: sessionLoading } = useCurrentUser();
   const [adminMode, setAdminMode] = useState<"reply" | "private">(adminModeOverride ?? "reply");
@@ -82,8 +173,10 @@ export function SimulatorCommentsPanel({
   const {
     discussionComments,
     privateNotes,
+    authorLabels,
     loading,
     error,
+    refresh: refreshDiscussion,
     addUserComment,
     addUserReply,
     updateUserRootComment,
@@ -98,14 +191,51 @@ export function SimulatorCommentsPanel({
       viewerAppUserId: appUser?.id ?? null,
       viewerRole: appUser?.role ?? null,
       includeAdminPrivate,
+      hydrateFromInitialData: hasInitialCommentData,
+      initialDiscussionComments,
+      initialPrivateNotes,
+      initialAuthorLabels,
     });
-  const [authorLabels, setAuthorLabels] = useState<Record<string, string>>({});
-  const [body, setBody] = useState("");
+  const effectiveDiscussionComments = useMemo(
+    () =>
+      hasInitialCommentData && discussionComments.length === 0
+        ? initialDiscussionComments
+        : discussionComments,
+    [discussionComments, hasInitialCommentData, initialDiscussionComments]
+  );
+  const effectivePrivateNotes = useMemo(
+    () =>
+      hasInitialCommentData && privateNotes.length === 0
+        ? initialPrivateNotes
+        : privateNotes,
+    [hasInitialCommentData, initialPrivateNotes, privateNotes]
+  );
+  const effectiveAuthorLabels = useMemo(
+    () =>
+      hasInitialCommentData && Object.keys(authorLabels).length === 0
+        ? initialAuthorLabels
+        : authorLabels,
+    [authorLabels, hasInitialCommentData, initialAuthorLabels]
+  );
+  const [composerNote, setComposerNote] = useState<RichNoteEditorValue>(() => createEmptyRichNoteValue());
   const [replyTo, setReplyTo] = useState<string | null>(null);
-  const [replyBody, setReplyBody] = useState("");
+  const [replyNote, setReplyNote] = useState<RichNoteEditorValue>(() => createEmptyRichNoteValue());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionOk, setActionOk] = useState<string | null>(null);
+  const [actionOkVisible, setActionOkVisible] = useState(false);
   const [editingRootId, setEditingRootId] = useState<string | null>(null);
-  const [editRootBody, setEditRootBody] = useState("");
+  const [editRootNote, setEditRootNote] = useState<RichNoteEditorValue>(() => createEmptyRichNoteValue());
+  const [resubmittingRootId, setResubmittingRootId] = useState<string | null>(null);
+  const [replyResubmittingRootId, setReplyResubmittingRootId] = useState<string | null>(null);
+  const [deletingDraftThreadId, setDeletingDraftThreadId] = useState<string | null>(null);
+  const [traineeComposerMode, setTraineeComposerMode] = useState<"draft" | "review">("review");
+  const [transientNotice, setTransientNotice] = useState<{
+    message: string;
+    tone: "success" | "error";
+    /** `sectionHeader` = same row as `sectionHeaderTitle`; `card` = corner of composer shell */
+    placement?: "card" | "sectionHeader";
+  } | null>(null);
+  const [transientNoticeVisible, setTransientNoticeVisible] = useState(false);
 
   const predefinedItems = useMemo(() => {
     return predefinedNotes
@@ -119,14 +249,27 @@ export function SimulatorCommentsPanel({
   }, [predefinedNotes]);
 
   const topLevelComments = useMemo(() => {
-    return discussionComments
+    return effectiveDiscussionComments
       .filter((c) => c.parent_comment_id == null && c.comment_type === "user_comment")
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [discussionComments]);
+  }, [effectiveDiscussionComments]);
+
+  const latestSubmissionByRootId = useMemo(() => {
+    const map = new Map<string, ReviewSubmissionRow>();
+    for (const submission of submissions) {
+      const rootId = submission.submitted_root_comment_id;
+      if (!rootId) continue;
+      const existing = map.get(rootId);
+      if (!existing || submission.submission_version > existing.submission_version) {
+        map.set(rootId, submission);
+      }
+    }
+    return map;
+  }, [submissions]);
 
   const adminPrivateNotes = useMemo(() => {
-    return [...privateNotes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [privateNotes]);
+    return [...effectivePrivateNotes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [effectivePrivateNotes]);
 
   const activeAdminThreadRootId = useMemo(() => {
     if (!canAccessStaffFeatures(appUser?.role)) return null;
@@ -137,15 +280,16 @@ export function SimulatorCommentsPanel({
     (c: SimulatorCommentRow) => {
       if (!appUser || !isTrainee(appUser.role) || appUser.id !== c.author_app_user_id) return false;
       if (c.comment_type !== "user_comment" || c.parent_comment_id != null) return false;
+      if (!latestSubmissionByRootId.get(c.id)) return true;
       if (Date.now() - new Date(c.created_at).getTime() >= TRAINEE_ROOT_EDIT_MS) return false;
-      return !subtreeHasAdminQa(c.id, discussionComments);
+      return !subtreeHasAdminQa(c.id, effectiveDiscussionComments);
     },
-    [appUser, discussionComments]
+    [appUser, effectiveDiscussionComments, latestSubmissionByRootId]
   );
 
   const repliesByParent = useMemo(() => {
-    const map: Record<string, typeof discussionComments> = {};
-    for (const c of discussionComments) {
+    const map: Record<string, typeof effectiveDiscussionComments> = {};
+    for (const c of effectiveDiscussionComments) {
       if (!c.parent_comment_id) continue;
       if (!map[c.parent_comment_id]) map[c.parent_comment_id] = [];
       map[c.parent_comment_id].push(c);
@@ -154,7 +298,28 @@ export function SimulatorCommentsPanel({
       map[parentId].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     }
     return map;
-  }, [discussionComments]);
+  }, [effectiveDiscussionComments]);
+
+  const threadFeedItemsByRootId = useMemo(() => {
+    const map = new Map<string, Array<{ kind: "reply"; sortAt: string; reply: SimulatorCommentRow }>>();
+
+    for (const [parentId, replies] of Object.entries(repliesByParent)) {
+      map.set(
+        parentId,
+        replies.map((reply) => ({
+          kind: "reply" as const,
+          sortAt: reply.created_at,
+          reply,
+        }))
+      );
+    }
+
+    for (const items of map.values()) {
+      items.sort((a, b) => new Date(a.sortAt).getTime() - new Date(b.sortAt).getTime());
+    }
+
+    return map;
+  }, [repliesByParent]);
 
   const hasVisibleItems =
     canViewPrivateNotes(appUser?.role)
@@ -168,6 +333,42 @@ export function SimulatorCommentsPanel({
     adminMode === "reply" &&
     !threadId &&
     !hasUserThreads;
+  const traineeNeedsThread = canWriteTraineeDiscussion(appUser?.role) && reviewMode && !threadId && !createThread;
+  const canWriteTraineeNotes = canWriteTraineeDiscussion(appUser?.role);
+  const canWriteAdminPrivateNote =
+    adminMode === "private" && !!appUser?.role && canCreatePrivateNotes(appUser.role);
+  const composerActionLabel =
+    traineeComposerMode === "draft" ? "Save as draft" : "Submit for review";
+
+  useEffect(() => {
+    if (!transientNotice) return;
+    setTransientNoticeVisible(true);
+    const fadeOutId = window.setTimeout(() => {
+      setTransientNoticeVisible(false);
+    }, 1800);
+    const timeoutId = window.setTimeout(() => {
+      setTransientNotice(null);
+    }, 2400);
+    return () => {
+      window.clearTimeout(fadeOutId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [transientNotice]);
+
+  useEffect(() => {
+    if (!actionOk) return;
+    setActionOkVisible(true);
+    const fadeOutId = window.setTimeout(() => {
+      setActionOkVisible(false);
+    }, 1800);
+    const timeoutId = window.setTimeout(() => {
+      setActionOk(null);
+    }, 2400);
+    return () => {
+      window.clearTimeout(fadeOutId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [actionOk]);
 
   useEffect(() => {
     if (!canViewPrivateNotes(appUser?.role)) return;
@@ -182,63 +383,86 @@ export function SimulatorCommentsPanel({
     }
   }, [appUser?.role, threadId, adminModeOverride]);
 
-  useEffect(() => {
-    const authorIds = Array.from(
-      new Set([...discussionComments, ...privateNotes].map((c) => c.author_app_user_id).filter(Boolean))
-    );
-    if (authorIds.length === 0) {
-      setAuthorLabels({});
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const supabase = createClient();
-      let rows: { id: string; email: string | null; full_name?: string | null }[] = [];
-      const withFullName = await supabase
-        .from("app_users")
-        .select("id, email, full_name")
-        .in("id", authorIds);
-      if (withFullName.error) {
-        const fallback = await supabase
-          .from("app_users")
-          .select("id, email")
-          .in("id", authorIds);
-        rows = (fallback.data as { id: string; email: string | null }[]) ?? [];
-      } else {
-        rows = (withFullName.data as { id: string; email: string | null; full_name?: string | null }[]) ?? [];
+  const getAuthorLabel = useCallback(
+    (comment: SimulatorCommentRow) => {
+      if (comment.author_app_user_id === appUser?.id) {
+        const viewerFullName = (appUser.full_name ?? "").trim();
+        const viewerEmail = (appUser.email ?? "").trim();
+        if (viewerFullName && viewerEmail) return `${viewerFullName} · ${viewerEmail}`;
+        if (viewerFullName || viewerEmail) return viewerFullName || viewerEmail;
       }
-      if (cancelled) return;
-      const map: Record<string, string> = {};
-      for (const row of rows) {
-        const fullName = (row.full_name ?? "").trim();
-        const email = (row.email ?? "").trim();
-        map[row.id] = fullName && email ? `${fullName} · ${email}` : (fullName || email || "user");
-      }
-      setAuthorLabels(map);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [discussionComments, privateNotes]);
+      return (
+        effectiveAuthorLabels[comment.author_app_user_id] ??
+        (comment.author_role === "trainee" ? "user" : formatAppUserRoleLabel(comment.author_role))
+      );
+    },
+    [appUser?.email, appUser?.full_name, appUser?.id, effectiveAuthorLabels]
+  );
 
-  const onAddTrainee = useCallback(async () => {
-    if (!body.trim() || !appUser?.id) return;
+  const onAddTrainee = useCallback(async (mode: "draft" | "review" = "review") => {
+    if (!composerNote.body.trim() || !appUser?.id) return;
     setActionError(null);
+    setActionOk(null);
     try {
       if (canViewPrivateNotes(appUser.role)) {
         if (adminMode === "private") {
-          await addAdminPrivateComment(body, appUser.id);
+          await addAdminPrivateComment(composerNote, appUser.id);
+          setTransientNotice({
+            message: "Private note saved.",
+            tone: "success",
+            placement: sectionHeaderTitle ? "sectionHeader" : "card",
+          });
         } else {
           if (!activeAdminThreadRootId) {
-            throw new Error("Open a thread from Admin panel to add an admin reply.");
+            throw new Error("Open a review case from the Admin panel to add an admin reply.");
           }
-          await addAdminQaReply(body, activeAdminThreadRootId, appUser.id);
+          await addAdminQaReply(composerNote, activeAdminThreadRootId, appUser.id);
+          setActionOk("QA reply sent.");
         }
       } else {
-        await addUserComment(body, appUser.id);
+        const workingThreadId = createThread ? await createThread() : threadId;
+        if (!workingThreadId) {
+          throw new Error("No cases for review yet. Wait a moment or refresh the page.");
+        }
+
+        if (prepareTraineeThread) {
+          await prepareTraineeThread(workingThreadId);
+        }
+
+        const createdCommentId = await addUserComment(composerNote, appUser.id, workingThreadId);
+        if (mode === "draft") {
+          setActionOk("Draft note saved.");
+          if (!showStatusMessages) {
+            setTransientNotice({ message: "Draft saved.", tone: "success" });
+          }
+        } else {
+          const supabase = createClient();
+          const { submission, error: submitError } = await submitReviewSubmission(supabase, {
+            threadId: workingThreadId,
+            submittedRootCommentId: createdCommentId,
+            activityAppUserId: appUser.id,
+          });
+
+          if (submitError) {
+            throw new Error(`Note was saved, but review snapshot was not created: ${submitError}`);
+          }
+
+          emitReviewSubmissionsChanged(workingThreadId);
+          setActionOk(
+            submission
+              ? `Review note submitted as snapshot v${submission.submission_version}.`
+              : "Review note submitted."
+          );
+          if (!showStatusMessages) {
+            setTransientNotice({ message: "Sent to reviewer.", tone: "success" });
+          }
+        }
       }
-      setBody("");
+      setComposerNote(createEmptyRichNoteValue());
     } catch (e) {
+      if (!showStatusMessages) {
+        setTransientNotice({ message: "Could not save your note.", tone: "error" });
+      }
       setActionError(getErrorMessage(e, "Failed to add comment"));
     }
   }, [
@@ -248,31 +472,165 @@ export function SimulatorCommentsPanel({
     addUserComment,
     adminMode,
     appUser,
-    body,
+    composerNote,
+    createThread,
+    prepareTraineeThread,
+    sectionHeaderTitle,
+    showStatusMessages,
+    threadId,
   ]);
 
   const onSendQa = useCallback(
     async (parentId: string) => {
-      if (!replyBody.trim() || !appUser?.id) return;
+      if (!replyNote.body.trim() || !appUser?.id) return;
       setActionError(null);
+      setActionOk(null);
       try {
-        await addAdminQaReply(replyBody, parentId, appUser.id);
-        setReplyBody("");
+        await addAdminQaReply(replyNote, parentId, appUser.id);
+        setReplyNote(createEmptyRichNoteValue());
         setReplyTo(null);
+        setActionOk("QA reply sent.");
       } catch (e) {
         setActionError(getErrorMessage(e, "Failed to send QA reply"));
       }
     },
-    [addAdminQaReply, appUser, replyBody]
+    [addAdminQaReply, appUser, replyNote]
   );
 
-  if (!threadId && !(includeAdminPrivate && hasPrivateTarget) && predefinedNotes.length === 0) {
+  const onResubmitRoot = useCallback(
+    async (rootId: string, nextNote?: RichNoteEditorValue) => {
+      if (!appUser?.id || !threadId) return;
+      setActionError(null);
+      setActionOk(null);
+      setResubmittingRootId(rootId);
+      try {
+        if (nextNote) {
+          await updateUserRootComment(rootId, nextNote, appUser.id);
+        }
+
+        const supabase = createClient();
+        const { submission, error: submitError } = await submitReviewSubmission(supabase, {
+          threadId,
+          submittedRootCommentId: rootId,
+          activityAppUserId: appUser.id,
+        });
+
+        if (submitError) {
+          throw new Error(`Update was saved, but review snapshot was not created: ${submitError}`);
+        }
+
+        emitReviewSubmissionsChanged(threadId);
+        setEditingRootId(null);
+        setEditRootNote(createEmptyRichNoteValue());
+        setActionOk(
+          submission
+            ? `Resubmitted for review as snapshot v${submission.submission_version}.`
+            : "Resubmitted for review."
+        );
+      } catch (e) {
+        setActionError(getErrorMessage(e, "Failed to resubmit note"));
+      } finally {
+        setResubmittingRootId(null);
+      }
+    },
+    [appUser, threadId, updateUserRootComment]
+  );
+
+  const onTraineeReplyThenNewSnapshot = useCallback(
+    async (rootId: string) => {
+      if (!appUser?.id || !threadId || !replyNote.body.trim()) return;
+      setActionError(null);
+      setActionOk(null);
+      setReplyResubmittingRootId(rootId);
+      try {
+        await addUserReply(replyNote, rootId, appUser.id);
+        const supabase = createClient();
+        const { submission, error: submitError } = await submitReviewSubmission(supabase, {
+          threadId,
+          submittedRootCommentId: rootId,
+          activityAppUserId: appUser.id,
+        });
+        if (submitError) {
+          throw new Error(`Reply was saved, but a new snapshot was not created: ${submitError}`);
+        }
+        emitReviewSubmissionsChanged(threadId);
+        void refreshDiscussion();
+        setReplyNote(createEmptyRichNoteValue());
+        setReplyTo(null);
+        setActionOk(
+          submission
+            ? `Reply posted and snapshot v${submission.submission_version} submitted for review.`
+            : "Reply posted and submitted for review."
+        );
+      } catch (e) {
+        setActionError(getErrorMessage(e, "Failed to submit for review"));
+      } finally {
+        setReplyResubmittingRootId(null);
+      }
+    },
+    [addUserReply, appUser, replyNote, threadId, refreshDiscussion]
+  );
+
+  const onDeleteDraft = useCallback(async () => {
+    if (!threadId || !onDeleteDraftThread) return;
+    setActionError(null);
+    setActionOk(null);
+    setDeletingDraftThreadId(threadId);
+    try {
+      await onDeleteDraftThread(threadId);
+      setActionOk("Draft deleted.");
+    } catch (e) {
+      setActionError(getErrorMessage(e, "Failed to delete draft"));
+    } finally {
+      setDeletingDraftThreadId(null);
+    }
+  }, [onDeleteDraftThread, threadId]);
+
+  const shouldRenderPanel =
+    Boolean(threadId) ||
+    (includeAdminPrivate && hasPrivateTarget) ||
+    predefinedNotes.length > 0 ||
+    reviewMode ||
+    Boolean(adminModeOverride);
+
+  if (!shouldRenderPanel) {
     return null;
   }
 
+  const transientNoticeBubble = transientNotice ? (
+    <div
+      className={`rounded-[0.9rem] px-3 py-1.5 text-xs font-medium shadow-[0_14px_28px_rgba(15,23,42,0.14)] transition-all duration-300 ease-out sm:px-3.5 sm:py-2 sm:text-sm ${
+        transientNoticeVisible
+          ? "translate-y-0 opacity-100"
+          : "-translate-y-1 opacity-0"
+      } ${
+        transientNotice.tone === "success"
+          ? "border border-emerald-200 bg-emerald-50/95 text-emerald-800"
+          : "border border-rose-200 bg-rose-50/95 text-rose-800"
+      }`}
+      role="status"
+      aria-live="polite"
+    >
+      {transientNotice.message}
+    </div>
+  ) : null;
+
   return (
-    <div className={`${withTopBorder ? "mt-6 border-t border-slate-200 pt-4" : "mt-3"} space-y-3`}>
-      {showTitle ? <h3 className="text-sm font-semibold text-slate-800">{title}</h3> : null}
+    <div className={`${withTopBorder ? "mt-6 border-t border-slate-200 pt-4" : flushTop ? "mt-0" : "mt-3"} space-y-3`}>
+      {sectionHeaderTitle ? (
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="heading-section flex-1 border-b-0 border-transparent pb-0 pr-2">
+              {sectionHeaderTitle}
+            </h2>
+            <div className="pointer-events-none flex min-w-0 shrink-0 justify-end">
+              {transientNotice?.placement === "sectionHeader" ? transientNoticeBubble : null}
+            </div>
+          </div>
+          <div className="mt-3 border-b border-[var(--border-subtle)]" aria-hidden />
+        </div>
+      ) : null}
+      {showTitle && !sectionHeaderTitle ? <h3 className="text-sm font-semibold text-slate-800">{title}</h3> : null}
       {sessionLoading ? (
         <p className="text-xs text-slate-500">Loading session…</p>
       ) : !appUser ? (
@@ -286,20 +644,20 @@ export function SimulatorCommentsPanel({
                   type="button"
                   className={`rounded px-2.5 py-1 text-xs ${
                     adminMode === "reply"
-                      ? "bg-[#264B5A] text-white"
-                      : "border border-slate-300 text-slate-700"
+                      ? "ui-btn ui-btn-primary min-h-0 rounded-[1.2rem] px-3 py-1.5 text-xs"
+                      : "ui-btn ui-btn-secondary min-h-0 rounded-[1.2rem] px-3 py-1.5 text-xs"
                   }`}
                   onClick={() => setAdminMode("reply")}
                 >
                   Users response
                 </button>
               ) : null}
-              <button
-                type="button"
-                className={`rounded px-2.5 py-1 text-xs ${
+                <button
+                  type="button"
+                  className={`rounded px-2.5 py-1 text-xs ${
                   adminMode === "private"
-                    ? "bg-[#264B5A] text-white"
-                    : "border border-slate-300 text-slate-700"
+                    ? "ui-btn ui-btn-primary min-h-0 rounded-[1.2rem] px-3 py-1.5 text-xs"
+                    : "ui-btn ui-btn-secondary min-h-0 rounded-[1.2rem] px-3 py-1.5 text-xs"
                 }`}
                 onClick={() => setAdminMode("private")}
               >
@@ -307,127 +665,305 @@ export function SimulatorCommentsPanel({
               </button>
             </div>
           ) : null}
-          {canWriteTraineeDiscussion(appUser.role) || adminMode === "private" ? (
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <input
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter") return;
-                  if (e.nativeEvent.isComposing) return;
-                  e.preventDefault();
-                  void onAddTrainee();
-                }}
-                placeholder={
-                  canCreatePrivateNotes(appUser.role)
-                    ? "Add admin note..."
-                    : "Add note..."
-                }
-                className="min-h-10 w-full flex-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800"
-              />
-              <button
-                type="button"
-                onClick={onAddTrainee}
-                className="rounded bg-slate-700 px-3 py-2 text-sm text-white"
-              >
-                Add
-              </button>
+          {!showComposer ? null : traineeNeedsThread ? (
+            <div className="empty-state text-left">
+              Preparing review workspace…
+            </div>
+          ) : canWriteTraineeNotes || adminMode === "private" ? (
+            <div
+              className={`evidence-shell relative space-y-4 rounded-[1rem] ${
+                composerTitle || composerDescription ? "p-4 sm:p-5" : "px-4 pb-4 pt-3 sm:px-5 sm:pb-5 sm:pt-4"
+              }`}
+            >
+              {!showStatusMessages && transientNotice && transientNotice.placement !== "sectionHeader" ? (
+                <div className="pointer-events-none absolute right-4 top-4 z-10">{transientNoticeBubble}</div>
+              ) : null}
+              {composerTitle || composerDescription ? (
+                <div className="space-y-2">
+                  {composerTitle ? (
+                    <h4 className="heading-section border-b-0 pb-0 text-left">{composerTitle}</h4>
+                  ) : null}
+                  {composerDescription ? (
+                    <p className="max-w-3xl text-sm leading-6 text-slate-600">{composerDescription}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {canWriteTraineeNotes ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="inline-flex rounded-[0.78rem] border border-slate-200 bg-[linear-gradient(180deg,rgba(244,248,251,0.96),rgba(236,243,248,0.96))] p-[2px] shadow-[inset_0_1px_2px_rgba(169,188,201,0.18)]">
+                      <button
+                        type="button"
+                        onClick={() => setTraineeComposerMode("draft")}
+                        className={`rounded-[0.64rem] px-2.25 py-[0.36rem] text-[0.84rem] font-medium transition ${
+                          traineeComposerMode === "draft"
+                            ? "border border-slate-300/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,251,0.96))] text-slate-900 shadow-[inset_0_1px_2px_rgba(255,255,255,0.78),inset_0_-1px_2px_rgba(166,183,196,0.18)]"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        Save as draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTraineeComposerMode("review")}
+                        className={`rounded-[0.64rem] px-2.25 py-[0.36rem] text-[0.84rem] font-medium transition ${
+                          traineeComposerMode === "review"
+                            ? "border border-[rgba(20,63,67,0.92)] bg-[linear-gradient(180deg,rgba(41,95,101,0.98),rgba(28,77,82,0.98))] text-white shadow-[inset_0_1px_2px_rgba(255,255,255,0.1),inset_0_-2px_3px_rgba(11,32,35,0.28)]"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        Submit for review
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.15rem] border border-slate-200/90 bg-white/90 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+                    <RichNoteEditor
+                      value={composerNote}
+                      onChange={setComposerNote}
+                      placeholder={
+                        traineeComposerMode === "draft"
+                          ? "Write a private working note for yourself..."
+                          : "Write the note you want the reviewer to see..."
+                      }
+                      onSubmitShortcut={() => {
+                        void onAddTrainee(traineeComposerMode);
+                      }}
+                    />
+                    <div className="mt-3 flex flex-col gap-3 border-t border-slate-200/80 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs leading-5 text-slate-500">
+                        Use Ctrl/Cmd + Enter to {traineeComposerMode === "draft" ? "save as draft" : "submit for review"}.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={!composerNote.body.trim()}
+                        onClick={() => {
+                          void onAddTrainee(traineeComposerMode);
+                        }}
+                        className={`ui-btn min-h-0 px-3 py-1.5 text-[0.9rem] disabled:cursor-not-allowed disabled:opacity-60 ${
+                          traineeComposerMode === "review"
+                            ? "ui-btn-primary"
+                            : "border border-slate-300 bg-[linear-gradient(180deg,rgba(255,255,255,1),rgba(241,246,250,1))] text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_8px_18px_rgba(18,31,46,0.09)] hover:border-slate-400 hover:bg-[linear-gradient(180deg,rgba(250,252,253,1),rgba(234,241,246,1))]"
+                        }`}
+                      >
+                        {composerActionLabel}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : canWriteAdminPrivateNote ? (
+                <div className="space-y-3 rounded-[1.15rem] border border-slate-200/90 bg-white/90 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <p className="text-xs leading-5 text-slate-500">
+                    Private notes are visible only to staff and do not affect the trainee case directly.
+                  </p>
+                  <RichNoteEditor
+                    value={composerNote}
+                    onChange={setComposerNote}
+                    placeholder="Add an internal admin note..."
+                    onSubmitShortcut={() => {
+                      void onAddTrainee();
+                    }}
+                  />
+                  <div className="flex flex-col gap-3 border-t border-slate-200/80 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-slate-500">Use Ctrl/Cmd + Enter to save this note.</p>
+                    <button
+                      type="button"
+                      disabled={!composerNote.body.trim()}
+                      onClick={() => {
+                        void onAddTrainee();
+                      }}
+                      className="ui-btn ui-btn-primary min-h-0 px-3 py-1.5 text-[0.9rem] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Save private note
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
       )}
 
-      {actionError ? <p className="text-xs text-rose-600">{actionError}</p> : null}
-      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+      {showStatusMessages && actionError ? <p className="text-xs text-rose-600">{formatPanelActionError(actionError)}</p> : null}
+      {showStatusMessages && actionOk ? (
+        <div
+          className={`inline-flex rounded-[0.9rem] border border-emerald-200 bg-emerald-50/95 px-3.5 py-2 text-sm font-medium text-emerald-800 shadow-[0_10px_22px_rgba(15,23,42,0.08)] transition-all duration-300 ease-out ${
+            actionOkVisible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0"
+          }`}
+        >
+          {actionOk}
+        </div>
+      ) : null}
+      {showStatusMessages && error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
-      {loading ? (
-        <p className="text-xs text-slate-500">Loading comments…</p>
+      {!showItems ? null : loading && !hasInitialCommentData ? (
+        reviewMode && canAccessStaffFeatures(appUser?.role) ? (
+          <ReviewThreadLoadingSkeleton />
+        ) : (
+          <p className="text-xs text-slate-500">Loading comments…</p>
+        )
+      ) : traineeNeedsThread ? (
+        <div className="empty-state">
+          Review case is being created for this workspace.
+        </div>
       ) : !hasVisibleItems ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
+        emptyMessage ? (
+        <div className="empty-state">
           {canReplyAsQA(appUser?.role) && !threadId && adminMode === "reply"
-            ? "Open Internal Notes on the case page to use the training thread."
+            ? "Open the case note on the case page to use the training case."
             : emptyMessage}
         </div>
+        ) : null
       ) : (
         <ul className="space-y-2">
           {showAdminThreadHint ? (
-            <li className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
-              Open a comment thread from Admin panel to view notes for a specific user.
+            <li className="empty-state">
+              Open a review case from the Admin panel to view notes for a specific user.
             </li>
           ) : null}
           {(!canViewPrivateNotes(appUser?.role) || adminMode === "reply") &&
             predefinedItems.map((item) => (
-            <li
-              key={item.key}
-              className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-800"
-            >
+            <li key={item.key} className="content-panel p-3 text-sm text-slate-800">
               <div className="mb-1 flex justify-between gap-2 text-[10px] text-slate-500">
                 <span>{item.created_by ?? "—"}</span>
                 <span className="tabular-nums">{formatDateTime(item.created_at)}</span>
               </div>
-              <p className="whitespace-pre-wrap text-slate-900">{item.text}</p>
+              <RichNoteContent body={item.text} className="text-slate-900" />
             </li>
           ))}
           {canViewPrivateNotes(appUser?.role) && adminMode === "private"
             ? adminPrivateNotes.map((note) => (
-            <li
-              key={note.id}
-              className="rounded-xl border border-amber-300 bg-amber-100/80 p-3 text-sm text-slate-800"
-            >
+            <li key={note.id} className="muted-panel p-3 text-sm text-slate-800">
               <div className="mb-1 flex justify-between gap-2 text-[10px] text-slate-500">
                 <span>Admin internal</span>
                 <span className="tabular-nums">{formatDateTime(note.created_at)}</span>
               </div>
-              <p className="whitespace-pre-wrap text-slate-900">{note.body}</p>
+              <RichNoteContent
+                body={note.body}
+                bodyJson={note.body_json}
+                bodyFormat={note.body_format}
+                className="text-slate-900"
+              />
             </li>
           ))
             : null}
           {(!canViewPrivateNotes(appUser?.role) || adminMode === "reply") &&
-            topLevelComments.map((item) => (
+            topLevelComments.map((item) => {
+              const threadFeedItems = threadFeedItemsByRootId.get(item.id) ?? [];
+              const hasThreadFeed = threadFeedItems.length > 0;
+              const showTraineeRootToolbar =
+                isTrainee(appUser?.role) &&
+                editingRootId !== item.id &&
+                (canEditTraineeRoot(item) ||
+                  !latestSubmissionByRootId.get(item.id) ||
+                  Boolean(threadId && onDeleteDraftThread));
+              const showTraineeReplySection =
+                isTrainee(appUser?.role) &&
+                item.comment_type === "user_comment" &&
+                Boolean(latestSubmissionByRootId.get(item.id)) &&
+                editingRootId !== item.id;
+              const traineeFooterCombined =
+                !hasThreadFeed && (showTraineeRootToolbar || showTraineeReplySection);
+              const showTraineeRootToolbarRow = showTraineeRootToolbar && hasThreadFeed;
+              const showTraineeReplySeparate = showTraineeReplySection && hasThreadFeed;
+
+              const isPrivateDraft = !latestSubmissionByRootId.get(item.id);
+              const isStaffReviewThreadItem =
+                !isTrainee(appUser?.role) && reviewMode && Boolean(latestSubmissionByRootId.get(item.id));
+
+              return (
             <li
               key={item.id}
-              className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-sm text-slate-800"
+              className={`text-sm text-slate-800 ${
+                isStaffReviewThreadItem
+                  ? "rounded-[1.1rem] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(250,252,254,0.98),rgba(242,247,251,0.98))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]"
+                  : isPrivateDraft
+                    ? "private-draft-panel p-3"
+                    : "content-panel p-3"
+              } ${item.id === highlightRootCommentId ? "ring-1 ring-[rgb(154_143_135_/_0.35)]" : ""}`}
             >
-              <div className="mb-1 flex justify-between gap-2 text-[10px] text-slate-500">
-                <span>
-                  {item.author_role === "admin"
-                    ? "admin"
-                    : (authorLabels[item.author_app_user_id] ?? "user")}
-                </span>
-                <span className="tabular-nums">{formatDateTime(item.created_at)}</span>
-              </div>
+              {latestSubmissionByRootId.get(item.id) ? (
+                <SubmittedThreadSummary
+                  submission={latestSubmissionByRootId.get(item.id)!}
+                  authorLabel={getAuthorLabel(item)}
+                  showAuthor={!isTrainee(appUser?.role)}
+                  traineeLayout={traineeSubmittedSummaryLayout}
+                  headerOnly={!showSubmittedSummary || isStaffReviewThreadItem}
+                />
+              ) : (
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span className="ui-badge ui-badge-private">
+                    Private
+                  </span>
+                  <span>Saved {formatDateTime(item.created_at)}</span>
+                  {!isTrainee(appUser?.role) ? (
+                    <>
+                      <span className="text-slate-400">by</span>
+                      <span className="text-slate-600">{getAuthorLabel(item)}</span>
+                    </>
+                  ) : null}
+                </div>
+              )}
               {editingRootId === item.id ? (
                 <div className="space-y-2">
-                  <textarea
-                    value={editRootBody}
-                    onChange={(e) => setEditRootBody(e.target.value)}
-                    rows={3}
-                    className="w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-800"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded bg-slate-700 px-2 py-1 text-xs text-white"
-                      onClick={async () => {
-                        if (!appUser?.id || !editRootBody.trim()) return;
+                  <RichNoteEditor
+                    value={editRootNote}
+                    onChange={setEditRootNote}
+                    placeholder="Update your note..."
+                    size="compact"
+                    onSubmitShortcut={() => {
+                      if (!appUser?.id || !editRootNote.body.trim()) return;
+                      void (async () => {
                         setActionError(null);
                         try {
-                          await updateUserRootComment(item.id, editRootBody, appUser.id);
+                          await updateUserRootComment(item.id, editRootNote, appUser.id);
                           setEditingRootId(null);
-                          setEditRootBody("");
+                          setEditRootNote(createEmptyRichNoteValue());
+                        } catch (e) {
+                          setActionError(getErrorMessage(e, "Failed to save edit"));
+                        }
+                      })();
+                    }}
+                  />
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      className={THREAD_ACTION_SAVE}
+                      onClick={async () => {
+                        if (!appUser?.id || !editRootNote.body.trim()) return;
+                        setActionError(null);
+                        try {
+                          await updateUserRootComment(item.id, editRootNote, appUser.id);
+                          setEditingRootId(null);
+                          setEditRootNote(createEmptyRichNoteValue());
                         } catch (e) {
                           setActionError(getErrorMessage(e, "Failed to save edit"));
                         }
                       }}
                     >
-                      Save
+                      Save changes
                     </button>
+                    {isTrainee(appUser?.role) &&
+                    latestSubmissionByRootId.get(item.id) &&
+                    latestSubmissionByRootId.get(item.id)!.review_state !== "changes_requested" ? (
+                      <button
+                        type="button"
+                        className={THREAD_ACTION_PRIMARY}
+                        disabled={resubmittingRootId === item.id || !editRootNote.body.trim()}
+                        onClick={() => {
+                          void onResubmitRoot(item.id, editRootNote);
+                        }}
+                      >
+                        {resubmittingRootId === item.id ? "Resubmitting..." : "Save and resubmit for review"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      className="rounded border border-slate-300 px-2 py-1 text-xs"
+                      className={THREAD_ACTION_SECONDARY_NEUTRAL}
                       onClick={() => {
                         setEditingRootId(null);
-                        setEditRootBody("");
+                        setEditRootNote(createEmptyRichNoteValue());
                       }}
                     >
                       Cancel
@@ -435,45 +971,294 @@ export function SimulatorCommentsPanel({
                   </div>
                 </div>
               ) : (
-                <p className="whitespace-pre-wrap text-slate-900">{item.body}</p>
+                <div className={`${isStaffReviewThreadItem ? "py-1" : "px-1 py-1"}`}>
+                  <RichNoteContent
+                    body={item.body}
+                    bodyJson={item.body_json}
+                    bodyFormat={item.body_format}
+                    className={isStaffReviewThreadItem ? "text-[0.97rem] leading-6 text-slate-900" : "text-slate-900"}
+                  />
+                </div>
               )}
-              {isTrainee(appUser?.role) && canEditTraineeRoot(item) && editingRootId !== item.id ? (
-                <button
-                  type="button"
-                  className="mt-1 text-xs text-[#264B5A] underline"
-                  onClick={() => {
-                    setEditingRootId(item.id);
-                    setEditRootBody(item.body);
-                  }}
-                >
-                  Edit (5 min, until admin replies)
-                </button>
+              {showTraineeRootToolbarRow ? (
+                <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-200/80 pt-4">
+                  {canEditTraineeRoot(item) ? (
+                    <button
+                      type="button"
+                      className={THREAD_ACTION_SECONDARY}
+                      onClick={() => {
+                        setReplyTo(null);
+                        setReplyNote(createEmptyRichNoteValue());
+                        setEditingRootId(item.id);
+                        setEditRootNote(
+                          createRichNoteEditorValue({
+                            body: item.body,
+                            bodyJson: item.body_json,
+                            bodyFormat: item.body_format,
+                          })
+                        );
+                      }}
+                    >
+                      {latestSubmissionByRootId.get(item.id)
+                        ? "Edit (5 min)"
+                        : "Edit"}
+                    </button>
+                  ) : null}
+                  {!latestSubmissionByRootId.get(item.id) ? (
+                    <button
+                      type="button"
+                      className={THREAD_ACTION_PRIMARY}
+                      disabled={resubmittingRootId === item.id}
+                      onClick={() => {
+                        void onResubmitRoot(item.id);
+                      }}
+                    >
+                      {resubmittingRootId === item.id ? "Submitting..." : "Submit for review"}
+                    </button>
+                  ) : null}
+                  {threadId && onDeleteDraftThread ? (
+                    <button
+                      type="button"
+                      className={THREAD_ACTION_DESTRUCTIVE}
+                      disabled={deletingDraftThreadId === threadId}
+                      onClick={() => {
+                        void onDeleteDraft();
+                      }}
+                    >
+                      {deletingDraftThreadId === threadId ? "Deleting..." : "Delete"}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
-              {canReplyAsQA(appUser?.role) && item.comment_type === "user_comment" ? (
-                <div className="mt-2">
-                  {replyTo === item.id ? (
-                    <div className="flex flex-col gap-1">
-                      <textarea
-                        value={replyBody}
-                        onChange={(e) => setReplyBody(e.target.value)}
-                        rows={2}
-                        className="w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-800"
-                        placeholder="QA reply…"
+              {traineeFooterCombined ? (
+                <div className="mt-4 border-t border-slate-200/80 pt-4">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {showTraineeRootToolbar ? (
+                      <>
+                        {canEditTraineeRoot(item) ? (
+                          <button
+                            type="button"
+                            className={THREAD_ACTION_SECONDARY}
+                            onClick={() => {
+                              setReplyTo(null);
+                              setReplyNote(createEmptyRichNoteValue());
+                              setEditingRootId(item.id);
+                              setEditRootNote(
+                                createRichNoteEditorValue({
+                                  body: item.body,
+                                  bodyJson: item.body_json,
+                                  bodyFormat: item.body_format,
+                                })
+                              );
+                            }}
+                          >
+                            {latestSubmissionByRootId.get(item.id)
+                              ? "Edit (5 min)"
+                              : "Edit"}
+                          </button>
+                        ) : null}
+                        {!latestSubmissionByRootId.get(item.id) ? (
+                          <button
+                            type="button"
+                            className={THREAD_ACTION_PRIMARY}
+                            disabled={resubmittingRootId === item.id}
+                            onClick={() => {
+                              void onResubmitRoot(item.id);
+                            }}
+                          >
+                            {resubmittingRootId === item.id ? "Submitting..." : "Submit for review"}
+                          </button>
+                        ) : null}
+                        {threadId && onDeleteDraftThread ? (
+                          <button
+                            type="button"
+                            className={THREAD_ACTION_DESTRUCTIVE}
+                            disabled={deletingDraftThreadId === threadId}
+                            onClick={() => {
+                              void onDeleteDraft();
+                            }}
+                          >
+                            {deletingDraftThreadId === threadId ? "Deleting..." : "Delete"}
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {showTraineeReplySection && replyTo !== item.id ? (
+                      <button
+                        type="button"
+                        className={THREAD_ACTION_SECONDARY}
+                        onClick={() => {
+                          setReplyTo(item.id);
+                          setReplyNote(createEmptyRichNoteValue());
+                        }}
+                      >
+                        Reply
+                      </button>
+                    ) : null}
+                  </div>
+                  {showTraineeReplySection && replyTo === item.id ? (
+                    <div className="mt-3 flex flex-col gap-2">
+                      {latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested" ? (
+                        <p className="text-xs text-slate-600">
+                          The reviewer asked for changes. Your message is added to this case and sent as a new version
+                          for staff.
+                        </p>
+                      ) : null}
+                      <RichNoteEditor
+                        value={replyNote}
+                        onChange={setReplyNote}
+                        placeholder={
+                          latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested"
+                            ? "Write your response to the reviewer…"
+                            : "Reply…"
+                        }
+                        size="compact"
+                        onSubmitShortcut={() => {
+                          if (!appUser?.id || !replyNote.body.trim()) return;
+                          if (latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested") {
+                            void onTraineeReplyThenNewSnapshot(item.id);
+                            return;
+                          }
+                          void (async () => {
+                            setActionError(null);
+                            setActionOk(null);
+                            try {
+                              await addUserReply(replyNote, item.id, appUser.id);
+                              setReplyNote(createEmptyRichNoteValue());
+                              setReplyTo(null);
+                              setActionOk("Reply sent.");
+                            } catch (e) {
+                              setActionError(getErrorMessage(e, "Failed to send reply"));
+                            }
+                          })();
+                        }}
                       />
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
-                          className="rounded bg-slate-700 px-2 py-1 text-xs text-white"
+                          className={THREAD_ACTION_PRIMARY}
+                          disabled={
+                            !replyNote.body.trim() ||
+                            (latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested" &&
+                              replyResubmittingRootId === item.id)
+                          }
+                          onClick={async () => {
+                            if (!appUser?.id || !replyNote.body.trim()) return;
+                            if (latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested") {
+                              await onTraineeReplyThenNewSnapshot(item.id);
+                              return;
+                            }
+                            setActionError(null);
+                            setActionOk(null);
+                            try {
+                              await addUserReply(replyNote, item.id, appUser.id);
+                              setReplyNote(createEmptyRichNoteValue());
+                              setReplyTo(null);
+                              setActionOk("Reply sent.");
+                            } catch (e) {
+                              setActionError(getErrorMessage(e, "Failed to send reply"));
+                            }
+                          }}
+                        >
+                          {latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested"
+                            ? replyResubmittingRootId === item.id
+                              ? "Submitting…"
+                              : "Submit for review"
+                            : "Send reply"}
+                        </button>
+                        <button
+                          type="button"
+                          className={THREAD_ACTION_SECONDARY_NEUTRAL}
+                          onClick={() => {
+                            setReplyTo(null);
+                            setReplyNote(createEmptyRichNoteValue());
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {hasThreadFeed ? (
+                <div className="mt-4 border-t border-slate-200/80 pt-4">
+                  <div className="space-y-3">
+                    {threadFeedItems.map((entry) => {
+                      if (entry.kind === "reply") {
+                        const reply = entry.reply;
+                        const isTraineeReply = reply.author_role === "trainee";
+                        const authorLabel = getAuthorLabel(reply);
+                        const compactAuthorLabel = authorLabel.split(" · ")[0] ?? authorLabel;
+                        const bubbleClass = isTraineeReply
+                          ? "border-slate-200/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.985),rgba(250,252,254,0.985))] shadow-[0_3px_10px_rgba(15,23,42,0.025)]"
+                          : "border-[rgb(196_220_220_/_0.96)] bg-[linear-gradient(180deg,rgba(246,251,251,0.992),rgba(236,245,245,0.992))] shadow-[inset_0_0_0_1px_rgba(90,134,138,0.05),0_4px_12px_rgba(30,90,95,0.04)]";
+
+                        return (
+                          <div
+                            key={reply.id}
+                            className={`flex ${isTraineeReply ? "justify-end" : "justify-start"}`}
+                          >
+                            <div
+                              className={`w-full rounded-[1.15rem] border px-4 py-3 sm:max-w-[76%] ${
+                                isTraineeReply ? "sm:max-w-[68%]" : ""
+                              } ${bubbleClass}`}
+                            >
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="min-w-0 truncate" title={authorLabel}>
+                                    {compactAuthorLabel}
+                                  </span>
+                                  {authorLabel !== compactAuthorLabel ? (
+                                    <span className="hidden min-w-0 truncate text-slate-400 sm:inline" title={authorLabel}>
+                                      · {authorLabel.slice(compactAuthorLabel.length + 3)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <span className="tabular-nums">{formatDateTime(reply.created_at)}</span>
+                              </div>
+                              <RichNoteContent
+                                body={reply.body}
+                                bodyJson={reply.body_json}
+                                bodyFormat={reply.body_format}
+                                className="text-[0.95rem] leading-6 text-slate-900"
+                              />
+                            </div>
+                          </div>
+                        );
+                      }
+
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {showQaReplyAction && canReplyAsQA(appUser?.role) && item.comment_type === "user_comment" ? (
+                <div className="mt-4 border-t border-slate-200/80 pt-4">
+                  {replyTo === item.id ? (
+                    <div className="flex flex-col gap-2">
+                      <RichNoteEditor
+                        value={replyNote}
+                        onChange={setReplyNote}
+                        placeholder="QA reply…"
+                        size="compact"
+                        onSubmitShortcut={() => {
+                          void onSendQa(item.id);
+                        }}
+                      />
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          className={THREAD_ACTION_PRIMARY}
                           onClick={() => onSendQa(item.id)}
                         >
                           Send QA
                         </button>
                         <button
                           type="button"
-                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          className={THREAD_ACTION_SECONDARY_NEUTRAL}
                           onClick={() => {
                             setReplyTo(null);
-                            setReplyBody("");
+                            setReplyNote(createEmptyRichNoteValue());
                           }}
                         >
                           Cancel
@@ -481,51 +1266,99 @@ export function SimulatorCommentsPanel({
                       </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      className="text-xs text-[#264B5A] underline"
-                      onClick={() => setReplyTo(item.id)}
-                    >
-                      Reply (QA)
-                    </button>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        className={THREAD_ACTION_SECONDARY}
+                        onClick={() => {
+                          setReplyTo(item.id);
+                          setReplyNote(createEmptyRichNoteValue());
+                        }}
+                      >
+                        Reply (QA)
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : null}
-              {isTrainee(appUser?.role) && item.comment_type === "user_comment" ? (
-                <div className="mt-2">
+              {showTraineeReplySeparate ? (
+                <div className="mt-4 border-t border-slate-200/80 pt-4">
                   {replyTo === item.id ? (
-                    <div className="flex flex-col gap-1">
-                      <textarea
-                        value={replyBody}
-                        onChange={(e) => setReplyBody(e.target.value)}
-                        rows={2}
-                        className="w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-800"
-                        placeholder="Reply..."
+                    <div className="flex flex-col gap-2">
+                      {latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested" ? (
+                        <p className="text-xs text-slate-600">
+                          The reviewer asked for changes. Your message is added to this case and sent as a new version
+                          for staff.
+                        </p>
+                      ) : null}
+                      <RichNoteEditor
+                        value={replyNote}
+                        onChange={setReplyNote}
+                        placeholder={
+                          latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested"
+                            ? "Write your response to the reviewer…"
+                            : "Reply…"
+                        }
+                        size="compact"
+                        onSubmitShortcut={() => {
+                          if (!appUser?.id || !replyNote.body.trim()) return;
+                          if (latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested") {
+                            void onTraineeReplyThenNewSnapshot(item.id);
+                            return;
+                          }
+                          void (async () => {
+                            setActionError(null);
+                            setActionOk(null);
+                            try {
+                              await addUserReply(replyNote, item.id, appUser.id);
+                              setReplyNote(createEmptyRichNoteValue());
+                              setReplyTo(null);
+                              setActionOk("Reply sent.");
+                            } catch (e) {
+                              setActionError(getErrorMessage(e, "Failed to send reply"));
+                            }
+                          })();
+                        }}
                       />
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
-                          className="rounded bg-slate-700 px-2 py-1 text-xs text-white"
+                          className={THREAD_ACTION_PRIMARY}
+                          disabled={
+                            !replyNote.body.trim() ||
+                            (latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested" &&
+                              replyResubmittingRootId === item.id)
+                          }
                           onClick={async () => {
-                            if (!appUser?.id || !replyBody.trim()) return;
+                            if (!appUser?.id || !replyNote.body.trim()) return;
+                            if (latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested") {
+                              await onTraineeReplyThenNewSnapshot(item.id);
+                              return;
+                            }
                             setActionError(null);
+                            setActionOk(null);
                             try {
-                              await addUserReply(replyBody, item.id, appUser.id);
-                              setReplyBody("");
+                              await addUserReply(replyNote, item.id, appUser.id);
+                              setReplyNote(createEmptyRichNoteValue());
                               setReplyTo(null);
+                              setActionOk("Reply sent.");
                             } catch (e) {
                               setActionError(getErrorMessage(e, "Failed to send reply"));
                             }
                           }}
                         >
-                          Send reply
+                          {latestSubmissionByRootId.get(item.id)?.review_state === "changes_requested"
+                            ? replyResubmittingRootId === item.id
+                              ? "Submitting…"
+                              : "Submit for review"
+                            : "Send reply"}
                         </button>
                         <button
                           type="button"
-                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          className={THREAD_ACTION_SECONDARY_NEUTRAL}
                           onClick={() => {
                             setReplyTo(null);
-                            setReplyBody("");
+                            setReplyNote(createEmptyRichNoteValue());
                           }}
                         >
                           Cancel
@@ -533,36 +1366,139 @@ export function SimulatorCommentsPanel({
                       </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      className="text-xs text-[#264B5A] underline"
-                      onClick={() => setReplyTo(item.id)}
-                    >
-                      Reply
-                    </button>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        className={THREAD_ACTION_SECONDARY}
+                        onClick={() => {
+                          setReplyTo(item.id);
+                          setReplyNote(createEmptyRichNoteValue());
+                        }}
+                      >
+                        Reply
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : null}
-              {(repliesByParent[item.id] ?? []).map((reply) => (
-                <div
-                  key={reply.id}
-                  className="mt-2 ml-4 rounded-lg border border-violet-200 bg-violet-50/70 p-2"
-                >
-                  <div className="mb-1 flex justify-between gap-2 text-[10px] text-slate-500">
-                    <span>
-                      {reply.author_role === "admin"
-                        ? "admin"
-                        : (authorLabels[reply.author_app_user_id] ?? "user")}
-                    </span>
-                    <span className="tabular-nums">{formatDateTime(reply.created_at)}</span>
-                  </div>
-                  <p className="whitespace-pre-wrap text-slate-900">{reply.body}</p>
-                </div>
-              ))}
             </li>
-          ))}
+              );
+            })}
         </ul>
       )}
+    </div>
+  );
+}
+
+function SubmittedThreadSummary({
+  submission,
+  authorLabel,
+  showAuthor,
+  traineeLayout,
+  headerOnly = false,
+}: {
+  submission: ReviewSubmissionRow;
+  authorLabel: string;
+  showAuthor: boolean;
+  traineeLayout: "default" | "alert";
+  headerOnly?: boolean;
+}) {
+  const formatStatusValue = (value: string) =>
+    value
+      .replaceAll("_", " ")
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+  const formatEvaluationValue = (value: ReviewSubmissionRow["evaluation"]) => {
+    if (value === "needs_work") return "Needs a full redo";
+    if (value === "developing") return "On the right track";
+    if (value === "solid") return "Good work";
+    if (value === "excellent") return "Outstanding";
+    return "Not graded";
+  };
+
+  const evaluationBadgeClass = (value: ReviewSubmissionRow["evaluation"]) => {
+    if (value === "needs_work") return "ui-badge-rose";
+    if (value === "developing") return "ui-badge-amber";
+    if (value === "solid") return "ui-badge-emerald";
+    if (value === "excellent") return "ui-badge-blue";
+    return "ui-badge-neutral";
+  };
+
+  const isTraineeView = !showAuthor;
+
+  if (!isTraineeView) {
+    return (
+      <div className="mb-4 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <span className={`ui-badge ${reviewSubmissionBadgeClass(submission.review_state)}`}>
+              {formatStatusValue(submission.review_state)}
+            </span>
+            <span className="text-slate-600">Submitted {formatDateTime(submission.submitted_at)}</span>
+            <span className="ui-badge ui-badge-neutral text-slate-600">v{submission.submission_version}</span>
+            <span className="text-slate-500">by {authorLabel}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-3 space-y-3">
+      {traineeLayout === "alert" && submission.evaluation ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <span className={`ui-badge ${reviewSubmissionBadgeClass(submission.review_state)}`}>
+              {formatStatusValue(submission.review_state)}
+            </span>
+            <span className={`ui-badge ${evaluationBadgeClass(submission.evaluation)}`}>
+              {formatEvaluationValue(submission.evaluation)}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <span className="text-slate-600">Submitted {formatDateTime(submission.submitted_at)}</span>
+            <span className="ui-badge ui-badge-neutral text-slate-600">
+              v{submission.submission_version}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          <span className={`ui-badge ${reviewSubmissionBadgeClass(submission.review_state)}`}>
+            {formatStatusValue(submission.review_state)}
+          </span>
+          <span className="text-slate-600">Submitted {formatDateTime(submission.submitted_at)}</span>
+          <span className="ui-badge ui-badge-neutral text-slate-600">
+            v{submission.submission_version}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewThreadLoadingSkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-[1.1rem] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(250,252,254,0.98),rgba(242,247,251,0.98))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
+        <div className="animate-pulse space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="h-5 w-[20rem] rounded-full bg-slate-200/80" />
+            <div className="h-4 w-28 rounded-full bg-slate-200/75" />
+          </div>
+          <div className="h-16 rounded-[1rem] bg-slate-100/90" />
+          <div className="space-y-2">
+            <div className="h-4 w-full rounded-full bg-slate-100/90" />
+            <div className="h-4 w-[78%] rounded-full bg-slate-100/90" />
+          </div>
+          <div className="border-t border-slate-200/80 pt-4">
+            <div className="ml-auto h-12 w-[10rem] rounded-[1rem] bg-slate-100/90" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

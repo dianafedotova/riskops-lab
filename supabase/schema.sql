@@ -8,6 +8,8 @@
 create table if not exists public.users (
   id text primary key,
   email text not null,
+  first_name text,
+  last_name text,
   country_code text,
   country_name text,
   tier text,
@@ -36,6 +38,8 @@ create table if not exists public.users (
 -- Ensure every canonical column exists on older DBs
 alter table public.users add column if not exists country_code text;
 alter table public.users add column if not exists country_name text;
+alter table public.users add column if not exists first_name text;
+alter table public.users add column if not exists last_name text;
 alter table public.users add column if not exists tier text;
 alter table public.users add column if not exists status text;
 alter table public.users add column if not exists risk_level text;
@@ -57,6 +61,12 @@ alter table public.users add column if not exists annual_income_min_usd numeric;
 alter table public.users add column if not exists annual_income_max_usd numeric;
 alter table public.users add column if not exists primary_source_of_funds text;
 alter table public.users add column if not exists selfie_path text;
+alter table public.users add column if not exists created_at timestamptz not null default now();
+alter table public.users add column if not exists updated_at timestamptz;
+alter table public.users drop constraint if exists users_tier_check;
+alter table public.users add constraint users_tier_check check (
+  tier is null or tier in ('Tier 0', 'Tier 1', 'Tier 2', 'Tier 3', 'Tier 4')
+);
 
 -- Legacy names from older schema.sql (kept for one-way backfill)
 alter table public.users add column if not exists country text;

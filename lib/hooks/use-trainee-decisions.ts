@@ -60,7 +60,7 @@ export function useTraineeDecisions(threadId: string | null) {
       rationale: string | null;
       reviewState?: string | null;
     }) => {
-      if (!threadId) throw new Error("No review thread");
+      if (!threadId) throw new Error("No cases for review");
       const supabase = createClient();
       const result = await createTraineeDecision(supabase, {
         threadId,
@@ -80,7 +80,7 @@ export function useTraineeDecisions(threadId: string | null) {
 
   const resetDecision = useCallback(
     async (appUserId: string) => {
-      if (!threadId) throw new Error("No review thread");
+      if (!threadId) throw new Error("No cases for review");
       const supabase = createClient();
       const result = await deleteTraineeDecisionsForThreadActor(supabase, {
         threadId,

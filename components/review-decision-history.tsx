@@ -39,7 +39,7 @@ export function ReviewDecisionHistory({
   return (
     <ul className="mb-4 space-y-2 text-sm">
       {decisions.map((decision) => (
-        <li key={decision.id} className="rounded-lg border border-slate-200 bg-white p-3">
+        <li key={decision.id} className="rounded-[1.2rem] border border-slate-200 bg-white p-3">
           <div className="mb-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
             <span className="tabular-nums">{formatDateTime(decision.created_at)}</span>
             {decision.proposed_alert_status && renderProposedStatus
@@ -48,7 +48,7 @@ export function ReviewDecisionHistory({
           </div>
           <p className="mb-1">
             <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getDecisionBadgeClassName(
+              className={`ui-badge ${getDecisionBadgeClassName(
                 decision.decision
               )}`}
             >

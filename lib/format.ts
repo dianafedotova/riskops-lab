@@ -8,7 +8,8 @@ export function ageFromIsoDate(dob: string | null): number | null {
 
 export function formatMoneyUsd(n: number | null): string {
   if (n == null || Number.isNaN(n)) return "—";
-  return `${n.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD`;
+  const normalized = Object.is(n, -0) || Math.abs(n) < 0.5 ? 0 : n;
+  return `${normalized.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD`;
 }
 
 export function formatDateTime(iso: string | null): string {
@@ -25,6 +26,17 @@ export function formatDate(iso: string | null): string {
   if (Number.isNaN(d.getTime())) return iso;
   const pad = (x: number) => String(x).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Alert workflow status for compact lists (`open` → `Open`, `false_positive` → `False positive`). */
+export function formatAlertStatusForList(status: string | null | undefined): string {
+  const raw = (status ?? "").trim();
+  if (!raw) return "—";
+  return raw
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
 }
 
 export function formatShortDate(iso: string | null): string {
@@ -59,10 +71,25 @@ export function maskIp(ip: string | null): string {
   return `${parts[0]}.***.***.${parts[3]}`;
 }
 
+/** Declined / failed / cancelled — do not style amounts like settled inbound or outbound credits. */
+export function isUnsuccessfulTransactionStatus(status: string | null | undefined): boolean {
+  const s = (status ?? "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!s) return false;
+  return (
+    s.includes("reject") ||
+    s === "failed" ||
+    s.includes("declin") ||
+    s === "cancelled" ||
+    s === "canceled" ||
+    s.includes("revers")
+  );
+}
+
 export function formatTransactionAmount(
   amount: number | null,
   currency: string | null,
-  direction: string | null
+  direction: string | null,
+  status?: string | null
 ): string {
   if (amount == null || Number.isNaN(amount)) return "—";
   const cc = currency ?? "USD";
@@ -70,4 +97,21 @@ export function formatTransactionAmount(
   const d = direction?.toLowerCase();
   const sign = d === "outbound" ? "−" : d === "inbound" ? "+" : "";
   return `${sign}${value} ${cc}`;
+}
+
+export function formatTransactionAmountUsd(
+  amountUsd: number | null,
+  direction: string | null,
+  status?: string | null,
+  options?: { withSign?: boolean }
+): string {
+  if (amountUsd == null || Number.isNaN(amountUsd)) return "—";
+  const value = Math.abs(amountUsd).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const d = direction?.toLowerCase();
+  const withSign = options?.withSign ?? true;
+  const sign = withSign ? (d === "outbound" ? "−" : d === "inbound" ? "+" : "") : "";
+  return `${sign}${value} USD`;
 }

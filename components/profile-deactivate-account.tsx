@@ -61,7 +61,7 @@ export function ProfileDeactivateAccount({ appUser }: ProfileDeactivateAccountPr
   }
 
   return (
-    <div className="mt-16 w-full max-w-[480px] rounded-lg border border-red-200 bg-red-50/40 px-4 py-4 text-left sm:px-5">
+    <div className="mt-16 w-full max-w-[480px] rounded-[1.2rem] border border-red-200 bg-red-50/40 px-4 py-4 text-left sm:px-5">
       <p className="text-[0.6875rem] font-semibold uppercase tracking-wider text-red-700">Danger zone</p>
       <h2 className="mt-2 text-base font-semibold text-slate-900">Deactivate account</h2>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
@@ -74,7 +74,7 @@ export function ProfileDeactivateAccount({ appUser }: ProfileDeactivateAccountPr
             setError(null);
             setOpen(true);
           }}
-          className="w-fit shrink-0 rounded-md bg-[var(--brand-dot)] px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[var(--brand-dot-hover)]"
+          className="w-fit shrink-0 rounded-[var(--radius-control)] bg-[var(--brand-dot)] px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[var(--brand-dot-hover)]"
         >
           Deactivate account
         </button>
@@ -92,7 +92,7 @@ export function ProfileDeactivateAccount({ appUser }: ProfileDeactivateAccountPr
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.2)]"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[1.2rem] border border-slate-200 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.2)]"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h3 id={titleId} className="text-lg font-semibold text-slate-900">
@@ -109,7 +109,7 @@ export function ProfileDeactivateAccount({ appUser }: ProfileDeactivateAccountPr
                 type="button"
                 onClick={close}
                 disabled={busy}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-[1.2rem] border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -117,7 +117,7 @@ export function ProfileDeactivateAccount({ appUser }: ProfileDeactivateAccountPr
                 type="button"
                 disabled={busy}
                 onClick={() => void deactivate()}
-                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700 disabled:opacity-60"
+                className="rounded-[1.2rem] bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700 disabled:opacity-60"
               >
                 {busy ? "Working…" : "Delete account"}
               </button>

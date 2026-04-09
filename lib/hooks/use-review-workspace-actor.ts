@@ -1,7 +1,7 @@
 "use client";
 
 import { canAccessStaffFeatures, isTrainee } from "@/lib/app-user-role";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { useCurrentUser } from "@/components/current-user-provider";
 import { canSeeAdminPanel } from "@/lib/permissions/checks";
 
 export function useReviewWorkspaceActor() {

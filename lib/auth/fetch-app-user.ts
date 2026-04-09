@@ -2,7 +2,7 @@ import type { AppUserProfileRow, AppUserRow } from "@/lib/types";
 import type { PostgrestError, SupabaseClient, User } from "@supabase/supabase-js";
 
 const APP_USER_SELECT =
-  "id, auth_user_id, role, email, created_at, full_name, first_name, last_name, country_code, country_name, avatar_url, provider, status, is_active, last_login_at, updated_at" as const;
+  "id, auth_user_id, role, organization_id, email, created_at, full_name, first_name, last_name, country_code, country_name, avatar_url, provider, status, is_active, last_login_at, updated_at" as const;
 
 const PROFILE_SELECT = "app_user_id, first_name, last_name, country_code, updated_at" as const;
 

@@ -4,7 +4,7 @@ import {
   getAppUserRoleFlags,
   type AppUserRole,
 } from "@/lib/app-user-role";
-import { useCurrentUser } from "@/lib/hooks/use-current-user";
+import { useCurrentUser } from "@/components/current-user-provider";
 
 /** Convenience wrapper around useCurrentUser().role */
 export function useUserRole() {

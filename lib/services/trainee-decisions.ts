@@ -22,6 +22,50 @@ export async function listTraineeDecisions(
   return { decisions: (data as TraineeDecisionRow[]) ?? [], error: null };
 }
 
+/**
+ * Same rules as the alert detail header: decision implies review/resolved status;
+ * otherwise fall back to the canonical `alerts.status` row (per trainee view on profile lists).
+ */
+export function displayStatusFromTraineeDecisionOnAlert(
+  decision: string | null | undefined,
+  fallbackAlertStatus: string | null | undefined
+): string {
+  const d = (decision ?? "").trim();
+  if (d === "info_requested" || d === "escalated") return "in review";
+  if (d === "false_positive" || d === "true_positive") return "resolved";
+  const raw = (fallbackAlertStatus ?? "open").trim().replace(/_/g, " ");
+  return raw || "open";
+}
+
+export async function listLatestTraineeDecisionsForAlertsByActor(
+  supabase: SupabaseClient,
+  args: { appUserId: string; alertIds: string[] }
+): Promise<{ byAlertId: Record<string, TraineeDecisionRow>; error: string | null }> {
+  if (args.alertIds.length === 0) {
+    return { byAlertId: {}, error: null };
+  }
+
+  const { data, error } = await supabase
+    .from("trainee_decisions")
+    .select(DECISION_COLS)
+    .eq("app_user_id", args.appUserId)
+    .in("alert_id", args.alertIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return { byAlertId: {}, error: error.message };
+  }
+
+  const byAlertId: Record<string, TraineeDecisionRow> = {};
+  for (const row of (data as TraineeDecisionRow[]) ?? []) {
+    const aid = row.alert_id?.trim();
+    if (!aid || byAlertId[aid]) continue;
+    byAlertId[aid] = row;
+  }
+
+  return { byAlertId, error: null };
+}
+
 export async function createTraineeDecision(
   supabase: SupabaseClient,
   args: {

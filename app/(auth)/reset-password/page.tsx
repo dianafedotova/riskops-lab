@@ -42,37 +42,37 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <section className="mx-auto max-w-md space-y-4 rounded border border-slate-300 bg-white p-6 text-slate-900">
+    <section className="mx-auto max-w-md space-y-4 rounded border border-[var(--border-app)] bg-[var(--surface-workspace)] p-6 text-[var(--app-shell-bg)]">
       <h1 className="text-lg font-semibold">Reset password</h1>
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
       {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
       <form onSubmit={onSubmit} className="space-y-3">
         <label className="block text-sm">
-          <span className="text-slate-600">New password</span>
+          <span className="text-[var(--accent-stone-500)]">New password</span>
           <input
             type="password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+            className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-slate-600">Confirm new password</span>
+          <span className="text-[var(--accent-stone-500)]">Confirm new password</span>
           <input
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+            className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />
         </label>
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-slate-800 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-slate-700 active:translate-y-[1px] active:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/60 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-[1.2rem] bg-[var(--app-shell-bg)] py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-[var(--brand-600)] active:translate-y-[1px] active:bg-[var(--background)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Updating..." : "Update password"}
         </button>
@@ -80,3 +80,4 @@ export default function ResetPasswordPage() {
     </section>
   );
 }
+

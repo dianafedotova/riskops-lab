@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveAlertContextIds, type AlertContextIds } from "@/lib/alerts/identity";
+import { recordAppUserActivity } from "@/lib/services/app-user-activity";
 
 export async function ensureAlertReviewThreadForContext(
   supabase: SupabaseClient,
@@ -21,19 +22,90 @@ export async function ensureAlertReviewThreadForContext(
   if (selErr) return { threadId: "", error: new Error(selErr.message) };
   if (existing?.id) return { threadId: String(existing.id), error: null };
 
+  const { data: alertRow, error: alertLoadErr } = await supabase
+    .from("alerts")
+    .select("id, user_id")
+    .eq("id", ids.publicId)
+    .maybeSingle();
+  if (alertLoadErr) {
+    return { threadId: "", error: new Error(alertLoadErr.message) };
+  }
+  if (!alertRow?.user_id) {
+    return { threadId: "", error: new Error("Alert owner is missing, so review case could not be created.") };
+  }
+
   const { data: inserted, error: insErr } = await supabase
     .from("review_threads")
     .insert({
       app_user_id: appUserId,
       alert_id: ids.publicId,
-      user_id: null,
+      user_id: String(alertRow.user_id),
       context_type: "alert",
     })
     .select("id")
     .single();
   if (insErr) return { threadId: "", error: new Error(insErr.message) };
 
-  return { threadId: String(inserted.id), error: null };
+  const threadId = String(inserted.id);
+  void recordAppUserActivity(supabase, {
+    appUserId: appUserId,
+    eventType: "trainee_alert_review_thread_created",
+    meta: {
+      alert_id: ids.publicId,
+      thread_id: threadId,
+      context_type: "alert",
+    },
+  });
+
+  return { threadId, error: null };
+}
+
+export async function createAlertReviewThreadForContext(
+  supabase: SupabaseClient,
+  appUserId: string,
+  alert: AlertContextIds
+): Promise<{ threadId: string; error: Error | null }> {
+  const { ids, error: alertErr } = await resolveAlertContextIds(supabase, alert);
+  if (alertErr || !ids.publicId) {
+    return { threadId: "", error: alertErr ?? new Error("Alert not found") };
+  }
+
+  const { data: alertRow, error: alertLoadErr } = await supabase
+    .from("alerts")
+    .select("id, user_id")
+    .eq("id", ids.publicId)
+    .maybeSingle();
+  if (alertLoadErr) {
+    return { threadId: "", error: new Error(alertLoadErr.message) };
+  }
+  if (!alertRow?.user_id) {
+    return { threadId: "", error: new Error("Alert owner is missing, so review case could not be created.") };
+  }
+
+  const { data: inserted, error: insErr } = await supabase
+    .from("review_threads")
+    .insert({
+      app_user_id: appUserId,
+      alert_id: ids.publicId,
+      user_id: String(alertRow.user_id),
+      context_type: "alert",
+    })
+    .select("id")
+    .single();
+  if (insErr) return { threadId: "", error: new Error(insErr.message) };
+
+  const threadId = String(inserted.id);
+  void recordAppUserActivity(supabase, {
+    appUserId: appUserId,
+    eventType: "trainee_alert_review_thread_created",
+    meta: {
+      alert_id: ids.publicId,
+      thread_id: threadId,
+      context_type: "alert",
+    },
+  });
+
+  return { threadId, error: null };
 }
 
 export async function ensureProfileReviewThreadForContext(
@@ -72,7 +144,52 @@ export async function ensureProfileReviewThreadForContext(
     return { threadId: "", error: new Error(insertError.message) };
   }
 
-  return { threadId: String(inserted.id), error: null };
+  const threadId = String(inserted.id);
+  void recordAppUserActivity(supabase, {
+    appUserId: appUserId,
+    eventType: "trainee_profile_review_thread_created",
+    meta: {
+      thread_id: threadId,
+      simulator_user_id: simulatorUserId,
+      context_type: "profile",
+    },
+  });
+
+  return { threadId, error: null };
+}
+
+export async function createProfileReviewThreadForContext(
+  supabase: SupabaseClient,
+  appUserId: string,
+  simulatorUserId: string
+): Promise<{ threadId: string; error: Error | null }> {
+  const { data: inserted, error: insertError } = await supabase
+    .from("review_threads")
+    .insert({
+      app_user_id: appUserId,
+      alert_id: null,
+      user_id: simulatorUserId,
+      context_type: "profile",
+    })
+    .select("id")
+    .single();
+
+  if (insertError) {
+    return { threadId: "", error: new Error(insertError.message) };
+  }
+
+  const threadId = String(inserted.id);
+  void recordAppUserActivity(supabase, {
+    appUserId: appUserId,
+    eventType: "trainee_profile_review_thread_created",
+    meta: {
+      thread_id: threadId,
+      simulator_user_id: simulatorUserId,
+      context_type: "profile",
+    },
+  });
+
+  return { threadId, error: null };
 }
 
 export async function fetchAlertReviewThreadIdForContext(
@@ -173,13 +290,14 @@ export async function fetchProfileReviewThreadById(
         app_user_id: string;
         user_id: string | null;
         context_type: string | null;
+        created_at: string;
       }
     | null;
   error: Error | null;
 }> {
   const { data, error } = await supabase
     .from("review_threads")
-    .select("id, app_user_id, user_id, context_type")
+    .select("id, app_user_id, user_id, context_type, created_at")
     .eq("id", threadId)
     .maybeSingle();
 
@@ -197,6 +315,7 @@ export async function fetchProfileReviewThreadById(
       app_user_id: String(data.app_user_id),
       user_id: data.user_id ? String(data.user_id) : null,
       context_type: data.context_type ? String(data.context_type) : null,
+      created_at: String(data.created_at ?? ""),
     },
     error: null,
   };

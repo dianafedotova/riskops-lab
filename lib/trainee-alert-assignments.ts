@@ -74,6 +74,33 @@ export function formatTraineeAssigneeLabel(a: TraineeAssigneeRow): string {
   return `${a.app_user_id.slice(0, 8)}…`;
 }
 
+export async function listTraineeAlertSelfAssignmentsForAlert(
+  supabase: SupabaseClient,
+  ids: AlertIds
+): Promise<{ rows: Array<{ app_user_id: string; created_at: string }>; error: string | null }> {
+  const resolved = await resolveTraineeAssignmentAlertColumn(supabase);
+  const { col, idVal } = pickAlertColumnForQuery(resolved, ids);
+  if (!idVal) {
+    return { rows: [], error: null };
+  }
+
+  const { data, error } = await supabase
+    .from("trainee_alert_assignments")
+    .select("app_user_id, created_at")
+    .eq(col, idVal)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    return { rows: [], error: error.message };
+  }
+
+  const rows = ((data ?? []) as Array<{ app_user_id: string; created_at: string }>).map((r) => ({
+    app_user_id: String(r.app_user_id),
+    created_at: String(r.created_at),
+  }));
+  return { rows, error: null };
+}
+
 export async function fetchAlertAssignees(
   supabase: SupabaseClient,
   ids: AlertIds

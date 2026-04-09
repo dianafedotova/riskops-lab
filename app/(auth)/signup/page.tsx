@@ -1,5 +1,6 @@
 "use client";
 
+import { FilterSelect } from "@/components/filter-select";
 import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { createClient } from "@/lib/supabase";
@@ -11,7 +12,7 @@ function NeedAppUserBanner() {
   const searchParams = useSearchParams();
   if (searchParams.get("need_app_user") !== "1") return null;
   return (
-    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+    <p className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--accent-stone-500)]">
       Your account is not registered in the simulator yet. Complete sign-up below so we can create your
       workspace profile.
     </p>
@@ -30,6 +31,11 @@ export default function SignupPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  const countrySelectOptions = useMemo(
+    () => [{ value: "", label: "Select country" }, ...COUNTRY_OPTIONS.map((country) => ({ value: country.code, label: country.name }))],
+    []
+  );
 
   const countryName = useMemo(
     () => COUNTRY_OPTIONS.find((c) => c.code === countryCode)?.name ?? "",
@@ -110,15 +116,15 @@ export default function SignupPage() {
 
   if (successMessage) {
     return (
-      <section className="mx-auto max-w-md space-y-4 rounded-xl border border-slate-300 bg-white p-6 text-slate-900">
+      <section className="mx-auto max-w-md space-y-4 rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-workspace)] p-6 text-[var(--app-shell-bg)]">
         <h1 className="text-lg font-semibold">Check your email</h1>
-        <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+        <p className="rounded-[1.2rem] border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           {successMessage}
         </p>
         <div className="space-y-2">
           <Link
             href="/sign-in"
-            className="inline-flex w-full items-center justify-center rounded-md bg-slate-800 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-slate-700 active:translate-y-[1px] active:bg-slate-900"
+            className="inline-flex w-full items-center justify-center rounded-[1.2rem] bg-[var(--app-shell-bg)] py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-[var(--brand-600)] active:translate-y-[1px] active:bg-[var(--background)]"
           >
             Go to sign in
           </Link>
@@ -128,12 +134,12 @@ export default function SignupPage() {
   }
 
   return (
-    <section className="mx-auto max-w-md space-y-4 rounded-xl border border-slate-300 bg-white p-6 text-slate-900">
+    <section className="mx-auto max-w-md space-y-4 rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-workspace)] p-6 text-[var(--app-shell-bg)]">
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-lg font-semibold">Sign up</h1>
-        <p className="pt-0.5 text-xs text-slate-600">
+        <p className="pt-0.5 text-xs text-[var(--accent-stone-500)]">
           Already have an account?{" "}
-          <Link href="/sign-in" className="font-medium text-slate-800 underline">
+          <Link href="/sign-in" className="font-medium text-[var(--app-shell-bg)] underline">
             Sign in
           </Link>
         </p>
@@ -149,104 +155,96 @@ export default function SignupPage() {
         type="button"
         onClick={onGoogle}
         disabled={googleLoading || loading}
-        className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white py-2 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-[0.8rem] border border-[rgb(201_213_231_/_0.98)] bg-white px-4 text-[0.95rem] font-semibold text-[rgb(24_42_59_/_0.98)] shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_4px_12px_rgba(15,23,42,0.06)] transition-[background-color,border-color,box-shadow,color] duration-150 hover:border-[rgb(174_190_216_/_0.98)] hover:bg-[rgb(236_243_253_/_1)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.94),0_6px_14px_rgba(29,44,77,0.08)] disabled:cursor-not-allowed disabled:opacity-55"
       >
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-semibold">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[rgb(201_213_231_/_0.98)] bg-white text-[0.95rem] font-bold text-[rgb(24_42_59_/_0.98)] shadow-[inset_0_1px_0_rgba(255,255,255,0.94)]">
           G
         </span>
         {googleLoading ? "Redirecting..." : "Continue with Google"}
       </button>
-      <div className="flex items-center gap-3 text-xs text-slate-400">
-        <span className="h-px flex-1 bg-slate-200" />
+      <div className="flex items-center gap-3 text-xs text-[var(--accent-stone-400)]">
+        <span className="h-px flex-1 bg-[var(--surface-muted)]" />
         <span>or</span>
-        <span className="h-px flex-1 bg-slate-200" />
+        <span className="h-px flex-1 bg-[var(--surface-muted)]" />
       </div>
 
       <form onSubmit={onSubmit} className="space-y-3">
         <label className="block text-sm">
-          <span className="text-slate-600">First name</span>
+          <span className="text-[var(--accent-stone-500)]">First name</span>
           <input
             type="text"
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+            className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="given-name"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-slate-600">Last name</span>
+          <span className="text-[var(--accent-stone-500)]">Last name</span>
           <input
             type="text"
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+            className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="family-name"
           />
         </label>
-        <label className="block text-sm">
-          <span className="text-slate-600">Country</span>
-          <select
+        <div className="block text-sm">
+          <span className="text-[var(--accent-stone-500)]">Country</span>
+          <div className="mt-1">
+            <FilterSelect
+              ariaLabel="Country"
             value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value)}
-            required
-            className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-2 text-sm"
-          >
-            <option value="">Select country</option>
-            {COUNTRY_OPTIONS.map((country) => (
-              <option key={country.code} value={country.code}>
-                {country.name}
-              </option>
-            ))}
-          </select>
-        </label>
+              onChange={setCountryCode}
+              options={countrySelectOptions}
+              className="h-10 w-full px-3 text-sm"
+            />
+          </div>
+        </div>
         <label className="block text-sm">
-          <span className="text-slate-600">Email</span>
+          <span className="text-[var(--accent-stone-500)]">Email</span>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+            className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="email"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-slate-600">Password</span>
+          <span className="text-[var(--accent-stone-500)]">Password</span>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+            className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-slate-600">Confirm password</span>
+          <span className="text-[var(--accent-stone-500)]">Confirm password</span>
           <input
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+            className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />
         </label>
         <button
           type="submit"
           disabled={loading || googleLoading}
-          className="w-full rounded-md bg-slate-800 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-slate-700 active:translate-y-[1px] active:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/60 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-10 w-full items-center justify-center rounded-[0.65rem] border border-[rgb(35_47_69_/_0.96)] bg-[rgb(35_46_69_/_0.98)] px-5 text-[0.98rem] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_8px_18px_rgba(18,31,46,0.12)] transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-[rgb(57_78_116_/_0.98)] hover:bg-[rgb(57_78_116_/_0.98)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_20px_rgba(42,63,106,0.18)] active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)] disabled:cursor-not-allowed disabled:opacity-55"
         >
           {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
-      <p className="text-center text-[11px] text-slate-500">
-        <Link href="/" className="underline">
-          Back to home page
-        </Link>
-      </p>
     </section>
   );
 }
+

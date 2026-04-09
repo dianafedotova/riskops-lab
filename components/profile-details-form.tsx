@@ -1,5 +1,6 @@
 "use client";
 
+import { FilterSelect } from "@/components/filter-select";
 import { formatAppUserRoleLabel } from "@/lib/app-user-role";
 import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
 import { formatDateTime } from "@/lib/format";
@@ -13,8 +14,8 @@ type ProfileDetailsFormProps = {
   authEmail: string;
 };
 
-const controlClass =
-  "h-9 w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 shadow-sm focus:border-[#5e8d9c] focus:outline-none focus:ring-1 focus:ring-[#5e8d9c]/40";
+const controlClass = "dark-input h-10 w-full max-w-xs px-4 text-sm font-medium text-slate-900";
+const countryOptions = [{ value: "", label: "—" }, ...COUNTRY_OPTIONS.map((c) => ({ value: c.code, label: c.name }))];
 
 function profileFieldRow(label: string, control: React.ReactNode, htmlFor?: string) {
   return (
@@ -37,7 +38,6 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
   const router = useRouter();
   const firstNameId = useId();
   const lastNameId = useId();
-  const countryId = useId();
   const [firstName, setFirstName] = useState(appUser?.first_name ?? "");
   const [lastName, setLastName] = useState(appUser?.last_name ?? "");
   const [countryCode, setCountryCode] = useState(appUser?.country_code?.trim() ?? "");
@@ -120,20 +120,13 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
         )}
         {profileFieldRow(
           "Country",
-          <select
-            id={countryId}
+          <FilterSelect
+            ariaLabel="Country"
             value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value)}
+            onChange={setCountryCode}
+            options={countryOptions}
             className={controlClass}
-          >
-            <option value="">—</option>
-            {COUNTRY_OPTIONS.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name}
-              </option>
-            ))}
-          </select>,
-          countryId,
+          />,
         )}
         {profileFieldRow("Email", emailDisplay)}
         {profileFieldRow("Role", roleDisplay)}
@@ -144,7 +137,7 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
         <button
           type="submit"
           disabled={saving}
-          className="inline-flex items-center justify-center rounded-lg bg-[#2d5f70] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#234d5c] disabled:opacity-60"
+          className="ui-btn ui-btn-primary disabled:opacity-60"
         >
           {saving ? "Saving…" : "Save"}
         </button>
@@ -154,3 +147,4 @@ export function ProfileDetailsForm({ appUser, authEmail }: ProfileDetailsFormPro
     </form>
   );
 }
+

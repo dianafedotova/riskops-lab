@@ -24,6 +24,8 @@ export async function proxy(request: NextRequest) {
     path === "/auth/callback";
   const isProtectedPath =
     path === "/dashboard" ||
+    path === "/my-cases" ||
+    path === "/workspace" ||
     path === "/users" ||
     path.startsWith("/users/") ||
     path === "/alerts" ||

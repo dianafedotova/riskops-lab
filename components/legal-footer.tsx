@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 type Props = {
   className?: string;
@@ -7,19 +7,19 @@ type Props = {
 export function LegalFooter({ className = "" }: Props) {
   return (
     <footer
-      className={`flex flex-col gap-3 border-t border-slate-700 pt-4 text-xs text-slate-400 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between ${className}`}
+      className={`flex flex-col gap-3 border-t border-[var(--border-app)] pt-4 text-xs text-[var(--accent-stone-400)] sm:flex-row sm:flex-wrap sm:items-center sm:justify-between ${className}`}
     >
       <p>RiskOps Lab simulator - training UI for fraud and AML reviews.</p>
       <div className="flex items-center gap-4">
         <Link
           href="/terms"
-          className="rounded transition-colors duration-150 hover:text-[#8ab9c8] hover:underline"
+          className="rounded transition-colors duration-150 hover:text-[var(--brand-400)] hover:underline"
         >
           Terms &amp; Conditions
         </Link>
         <Link
           href="/privacy"
-          className="rounded transition-colors duration-150 hover:text-[#8ab9c8] hover:underline"
+          className="rounded transition-colors duration-150 hover:text-[var(--brand-400)] hover:underline"
         >
           Privacy Policy
         </Link>
@@ -27,3 +27,5 @@ export function LegalFooter({ className = "" }: Props) {
     </footer>
   );
 }
+
+
