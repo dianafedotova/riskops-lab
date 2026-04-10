@@ -23,8 +23,23 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Star-select guard
+        run: npm run check:no-star-select
+
       - name: Unit tests
         run: npm test
+
+      - name: UI tests
+        run: npm run test:ui
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E smoke tests
+        run: npm run test:e2e
 
       - name: Build
         run: npm run build

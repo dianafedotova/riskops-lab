@@ -8,8 +8,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check:no-star-select": "node scripts/check-no-star-select.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:ui": "vitest run --config vitest.ui.config.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.48.0",
@@ -30,12 +34,17 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "jsdom": "^29.0.2",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4"

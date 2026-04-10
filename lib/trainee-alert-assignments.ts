@@ -1,4 +1,4 @@
-import { isPostgrestUnknownColumnError } from "@/lib/trainee-user-watchlist";
+import { isPostgrestUnknownColumnError } from "@/shared/lib/postgrest";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 
 export type TraineeAssigneeRow = {

@@ -9,9 +9,9 @@ import {
   ensureStaffViewer,
   ensureVisibleUsers,
   normalizeRequiredText,
-  shouldRetryWithLegacyShape,
   type StaffViewer,
 } from "@/lib/services/simulator-shared";
+import { shouldRetryWithLegacyShape } from "@/shared/lib/schema-compat";
 
 const USER_ACCOUNT_LINK_SELECT =
   "id, user_id, linked_user_id, link_reason, organization_id, created_at, updated_at" as const;

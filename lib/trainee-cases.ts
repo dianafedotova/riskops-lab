@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { mapAlertInternalToPublicIds } from "@/lib/alerts/identity";
 import { listReviewSubmissionsDirect } from "@/lib/services/review-submissions";
 import type { ReviewSubmissionRow, ReviewSubmissionState } from "@/lib/types";
-import { formatPostgrestError, isPostgrestUnknownColumnError } from "@/lib/trainee-user-watchlist";
+import { formatPostgrestError, isPostgrestUnknownColumnError } from "@/shared/lib/postgrest";
 
 /** Lifecycle of a trainee "case" derived from latest review_submission (draft = none yet). */
 export type TraineeCasePhase = "draft" | ReviewSubmissionState;

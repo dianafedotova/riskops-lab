@@ -1,4 +1,5 @@
 import { canSeeStaffActionControls } from "@/lib/permissions/checks";
+import { shouldRetryWithLegacyShape } from "@/shared/lib/schema-compat";
 import type { AppUserRow } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -101,13 +102,4 @@ export function viewerActorLabel(viewer: StaffViewer): string {
   return String(viewer?.id ?? "staff");
 }
 
-export function shouldRetryWithLegacyShape(errorMessage: string | null | undefined): boolean {
-  const message = (errorMessage ?? "").toLowerCase();
-  if (!message) return false;
-  return (
-    message.includes("does not exist") ||
-    message.includes("schema cache") ||
-    message.includes("could not find the") ||
-    message.includes("record ") && message.includes("has no field")
-  );
-}
+export { shouldRetryWithLegacyShape };

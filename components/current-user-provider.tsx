@@ -14,7 +14,7 @@ export function CurrentUserProvider({
   initialSession,
   children,
 }: {
-  initialSession: CurrentUserInitialSession;
+  initialSession?: CurrentUserInitialSession;
   children: ReactNode;
 }) {
   const value = useCurrentUserState(initialSession);

@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  brandedModalBackdropClassName,
+  brandedModalBodyClassName,
+  brandedModalCloseButtonClassName,
+  brandedModalFooterClassName,
+  brandedModalHeaderClassName,
+  brandedModalPanelClassName,
+} from "@/shared/ui/control-styles";
 import type { ReactNode } from "react";
 import { useEffect, useId } from "react";
 
@@ -38,7 +46,7 @@ export function ModalShell({
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+      className={brandedModalBackdropClassName}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !closeDisabled) {
@@ -51,10 +59,10 @@ export function ModalShell({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className={`w-full overflow-hidden rounded-[1.2rem] border border-slate-200/95 bg-[linear-gradient(180deg,rgb(255_255_255/_0.99),rgb(248_250_252/_0.99))] shadow-[0_24px_56px_rgba(15,23,42,0.22)] ${widthClassName}`}
+        className={brandedModalPanelClassName(widthClassName)}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-slate-200/80 px-5 py-4">
+        <div className={brandedModalHeaderClassName}>
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 id={titleId} className="text-lg font-semibold tracking-[-0.02em] text-slate-900">
@@ -70,7 +78,7 @@ export function ModalShell({
               type="button"
               onClick={onClose}
               disabled={closeDisabled}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.9rem] border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className={brandedModalCloseButtonClassName}
               aria-label="Close dialog"
             >
               <svg
@@ -88,8 +96,8 @@ export function ModalShell({
             </button>
           </div>
         </div>
-        <div className="max-h-[min(78vh,52rem)] overflow-y-auto px-5 py-5">{children}</div>
-        {footer ? <div className="border-t border-slate-200/80 px-5 py-4">{footer}</div> : null}
+        <div className={brandedModalBodyClassName}>{children}</div>
+        {footer ? <div className={brandedModalFooterClassName}>{footer}</div> : null}
       </div>
     </div>
   );

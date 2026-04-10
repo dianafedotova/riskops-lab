@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  brandedFieldLabelClassName,
+  brandedFieldShellClassName,
+  brandedInputClassName,
+  brandedTextareaClassName,
+  uiCx,
+} from "@/shared/ui/control-styles";
 import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
 export type SelectOption = {
@@ -27,8 +34,8 @@ export function SimulatorFormField({
   children: ReactNode;
 }) {
   return (
-    <label htmlFor={htmlFor} className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+    <label htmlFor={htmlFor} className={brandedFieldShellClassName}>
+      <span className={brandedFieldLabelClassName}>{label}</span>
       {children}
     </label>
   );
@@ -38,7 +45,7 @@ export function SimulatorFormInput(props: InputHTMLAttributes<HTMLInputElement>)
   return (
     <input
       {...props}
-      className={`dark-input h-11 w-full px-4 text-sm outline-none focus:ring-1 focus:ring-[var(--brand-ring)] disabled:opacity-60 ${props.className ?? ""}`}
+      className={uiCx(brandedInputClassName, props.className)}
     />
   );
 }
@@ -47,7 +54,7 @@ export function SimulatorFormTextarea(props: TextareaHTMLAttributes<HTMLTextArea
   return (
     <textarea
       {...props}
-      className={`dark-input min-h-[132px] w-full px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-[var(--brand-ring)] disabled:opacity-60 ${props.className ?? ""}`}
+      className={uiCx(brandedTextareaClassName, props.className)}
     />
   );
 }

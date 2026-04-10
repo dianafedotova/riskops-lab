@@ -1,9 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { CurrentUserProvider } from "@/components/current-user-provider";
-import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { PUBLIC_BETA_DESCRIPTION, PUBLIC_BETA_NAME } from "@/lib/public-config";
 import { getSiteOrigin } from "@/lib/site-url";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import localFont from "next/font/local";
@@ -66,16 +63,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = await createServerSupabaseClient();
-  const { authUser, appUser } = await getCurrentAppUser(supabase);
-
   return (
     <html
       lang="en"
       className={`${suseSans.variable} ${suseMono.variable} h-full antialiased`}
     >
       <body className="min-h-full min-w-0 bg-app-shell text-slate-200">
-        <CurrentUserProvider initialSession={{ authUser, appUser }}>{children}</CurrentUserProvider>
+        {children}
         <Analytics />
         <SpeedInsights />
       </body>

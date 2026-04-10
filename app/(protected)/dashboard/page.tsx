@@ -14,7 +14,7 @@ import {
   type TraineeCaseRow,
   type TraineeCaseKpiCounts,
 } from "@/lib/trainee-cases";
-import { formatPostgrestError } from "@/lib/trainee-user-watchlist";
+import { formatPostgrestError } from "@/shared/lib/postgrest";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 

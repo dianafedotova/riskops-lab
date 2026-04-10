@@ -9,10 +9,10 @@ import {
   ensureVisibleUsers,
   normalizeDateTime,
   normalizeRequiredText,
-  shouldRetryWithLegacyShape,
   type StaffViewer,
 } from "@/lib/services/simulator-shared";
 import { normalizeInternalNoteSignature } from "@/lib/internal-note-signatures";
+import { shouldRetryWithLegacyShape } from "@/shared/lib/schema-compat";
 
 type RawInternalNoteRow = {
   id: string;

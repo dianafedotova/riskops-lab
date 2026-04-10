@@ -66,11 +66,21 @@ Run these before merging or deploying:
 
 ```bash
 npm run lint
+npm run typecheck
+npm run check:no-star-select
 npm test
 npm run build
 ```
 
-`main` should stay green on all three.
+`main` should stay green on all five.
+
+## Architecture and refactor docs
+
+- [docs/architecture.md](docs/architecture.md)
+- [docs/refactor-program.md](docs/refactor-program.md)
+- [docs/ui-standards.md](docs/ui-standards.md)
+
+The refactor program is incremental: thin route entrypoints, feature-first ownership, shared UI primitives, and explicit data contracts without business-logic drift.
 
 ## Deployment sequence
 

@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  brandedCompactSelectTriggerClassName,
+  brandedControlChevronClassName,
+  brandedControlMenuClassName,
+  brandedControlOptionClassName,
+  brandedDisabledControlClassName,
+  uiCx,
+} from "@/shared/ui/control-styles";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 type FilterSelectOption = {
@@ -20,10 +28,6 @@ type FilterSelectProps = {
   menuOptions?: FilterSelectOption[];
   value: string;
 };
-
-function joinClasses(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(" ");
-}
 
 export function FilterSelect({
   ariaLabel,
@@ -109,17 +113,17 @@ export function FilterSelect({
             openAndFocus(menuSelectedIndex);
           }
         }}
-        className={joinClasses(
-          "dark-input flex h-10 w-full items-center justify-between gap-3 rounded-[0.65rem] px-4 text-left text-sm text-slate-800 outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20",
-          disabled && "cursor-not-allowed opacity-60",
+        className={uiCx(
+          brandedCompactSelectTriggerClassName,
+          disabled && brandedDisabledControlClassName,
           className,
         )}
       >
         <span className="truncate">{selectedOption.label}</span>
           <svg
-            className={joinClasses(
-              "h-4 w-4 shrink-0 text-slate-500 transition-transform duration-150",
-            isOpen && "rotate-180",
+            className={uiCx(
+              brandedControlChevronClassName,
+              isOpen && "rotate-180",
           )}
           viewBox="0 0 20 20"
           fill="none"
@@ -135,8 +139,8 @@ export function FilterSelect({
 
       {isOpen ? (
         <div
-          className={joinClasses(
-            "absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-[0.7rem] border border-slate-200/95 bg-white shadow-[0_18px_36px_rgba(15,23,42,0.16)]",
+          className={uiCx(
+            brandedControlMenuClassName,
             menuClassName,
           )}
         >
@@ -168,12 +172,7 @@ export function FilterSelect({
                         setOpen(false);
                       }
                     }}
-                    className={joinClasses(
-                      "block w-full px-4 py-2 text-left text-sm font-medium transition-colors duration-150 outline-none",
-                      selected
-                        ? "bg-[var(--brand-700)] text-white"
-                        : "text-slate-700 hover:bg-slate-100 focus:bg-slate-100",
-                    )}
+                    className={brandedControlOptionClassName(selected)}
                   >
                     {option.label}
                   </button>

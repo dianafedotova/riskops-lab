@@ -1,8 +1,14 @@
-import { canSeeStaffActionControls } from "@/lib/permissions/checks";
+import {
+  ensureStaffViewer,
+  ensureVisibleUsers,
+  normalizeDateTime,
+  normalizeRequiredText,
+  normalizeText,
+  type StaffViewer,
+} from "@/lib/services/simulator-shared";
 import type {
   AlertRow,
   AlertsCsvRow,
-  AppUserRow,
   CreateSimulatorAlertInput,
   ImportedSimulatorAlertRow,
   UpdateSimulatorAlertInput,
@@ -32,8 +38,6 @@ const ALERT_ALLOWED_HEADERS = [
 const ALERT_SEVERITY_VALUES = ["low", "medium", "high"] as const;
 const ALERT_STATUS_VALUES = ["open", "monitoring", "escalated", "closed"] as const;
 
-type StaffViewer = Pick<AppUserRow, "id" | "role" | "organization_id"> | null | undefined;
-
 type NormalizedAlertInput = {
   user_id: string;
   alert_type: string;
@@ -53,26 +57,6 @@ function generateUuid(): string {
     throw new Error("Secure UUID generation is unavailable in this runtime.");
   }
   return value;
-}
-
-function normalizeText(value: string | null | undefined): string | null {
-  const trimmed = (value ?? "").trim();
-  return trimmed === "" ? null : trimmed;
-}
-
-function ensureStaffViewer(viewer: StaffViewer): string | null {
-  if (!canSeeStaffActionControls(viewer?.role)) return "Staff access is required.";
-  if (!viewer?.organization_id) return "Current staff organization is missing.";
-  return null;
-}
-
-function normalizeRequiredText(value: string | null | undefined, fieldLabel: string, errors: string[]): string | null {
-  const trimmed = normalizeText(value);
-  if (!trimmed) {
-    errors.push(`${fieldLabel} is required.`);
-    return null;
-  }
-  return trimmed;
 }
 
 function normalizeSeverity(value: string | null | undefined, errors: string[]): string | null {
@@ -95,17 +79,6 @@ function normalizeStatus(value: string | null | undefined, errors: string[]): st
   if ((ALERT_STATUS_VALUES as readonly string[]).includes(trimmed)) return trimmed;
   errors.push(`Status must be one of: ${ALERT_STATUS_VALUES.join(", ")}.`);
   return null;
-}
-
-function normalizeDateTime(value: string | null | undefined, fieldLabel: string, errors: string[]): string | null {
-  const trimmed = normalizeText(value);
-  if (!trimmed) return null;
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) {
-    errors.push(`${fieldLabel} must be a valid date/time.`);
-    return null;
-  }
-  return parsed.toISOString();
 }
 
 function normalizeDateOnly(value: string | null | undefined, fieldLabel: string, errors: string[]): string | null {
@@ -177,21 +150,6 @@ function normalizeAlertRow(row: AlertRow): AlertRow {
   };
 }
 
-async function ensureVisibleUsers(
-  supabase: SupabaseClient,
-  userIds: string[]
-): Promise<{ ids: Set<string>; error: string | null }> {
-  if (userIds.length === 0) return { ids: new Set(), error: null };
-
-  const { data, error } = await supabase.from("users").select("id").in("id", userIds);
-  if (error) return { ids: new Set(), error: error.message };
-
-  return {
-    ids: new Set((((data as Array<{ id: string }> | null) ?? []).map((row) => String(row.id)))),
-    error: null,
-  };
-}
-
 export async function createSimulatorAlert(
   supabase: SupabaseClient,
   viewer: StaffViewer,
@@ -214,7 +172,7 @@ export async function createSimulatorAlert(
     .insert({
       internal_id: generateUuid(),
       ...value,
-      created_at: new Date().toISOString(),
+      created_at: value.created_at ?? new Date().toISOString(),
       organization_id: viewer!.organization_id,
     })
     .select(ALERT_MUTATION_SELECT)

@@ -19,7 +19,7 @@ import {
   sortTraineeCasesByUpdatedAt,
   type TraineeCaseRow,
 } from "@/lib/trainee-cases";
-import { formatPostgrestError } from "@/lib/trainee-user-watchlist";
+import { formatPostgrestError } from "@/shared/lib/postgrest";
 import { listWatchlistUsersForTrainee, removeSimulatorUserFromWatchlist } from "@/lib/services/watchlist";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";

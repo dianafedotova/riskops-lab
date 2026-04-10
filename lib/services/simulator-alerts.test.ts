@@ -158,6 +158,76 @@ describe("validateAlertsCsv", () => {
 });
 
 describe("simulator alert mutations", () => {
+  it("preserves normalized created_at when inserting a new alert", async () => {
+    const insert = vi.fn((payload: unknown) => ({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({
+          data: {
+            id: "alert-1",
+            internal_id: "int-1",
+            user_id: "user-1",
+            alert_type: "fraud",
+            severity: "high",
+            status: "open",
+            description: null,
+            rule_code: "FRD_001",
+            rule_name: null,
+            created_at: "2026-04-07T12:30:00.000Z",
+            updated_at: null,
+            alert_date: null,
+            decision: null,
+            organization_id: "org-1",
+            ...((payload as Record<string, unknown>) ?? {}),
+          },
+          error: null,
+        })),
+      })),
+    }));
+
+    const userSelect = vi.fn(() => ({
+      in: vi.fn(async () => ({
+        data: [{ id: "user-1" }],
+        error: null,
+      })),
+    }));
+
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "users") {
+          return {
+            select: userSelect,
+          };
+        }
+
+        if (table === "alerts") {
+          return {
+            insert,
+          };
+        }
+
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    const result = await createSimulatorAlert(supabase as never, makeViewer(), {
+      user_id: "user-1",
+      alert_type: "fraud",
+      severity: "high",
+      status: "open",
+      rule_code: "FRD_001",
+      created_at: "2026-04-07T12:30:00Z",
+    });
+
+    expect(result.error).toBeNull();
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "user-1",
+        created_at: "2026-04-07T12:30:00.000Z",
+        organization_id: "org-1",
+      })
+    );
+  });
+
   it("blocks non-staff create before any insert", async () => {
     const insert = vi.fn();
     const supabase = {

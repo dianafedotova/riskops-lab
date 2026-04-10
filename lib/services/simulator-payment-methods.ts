@@ -9,9 +9,9 @@ import {
   ensureVisibleUsers,
   normalizeRequiredText,
   normalizeText,
-  shouldRetryWithLegacyShape,
   type StaffViewer,
 } from "@/lib/services/simulator-shared";
+import { shouldRetryWithLegacyShape } from "@/shared/lib/schema-compat";
 
 const PAYMENT_METHOD_MUTATION_SELECT =
   "id, user_id, type, masked_number, card_network, status, bank_type, account_number, wallet_type, wallet_address, created_at" as const;

@@ -31,9 +31,9 @@ import {
   normalizeNumber,
   normalizeRequiredText,
   normalizeText,
-  shouldRetryWithLegacyShape,
   type StaffViewer,
 } from "@/lib/services/simulator-shared";
+import { shouldRetryWithLegacyShape } from "@/shared/lib/schema-compat";
 
 const TRANSACTION_MUTATION_SELECT =
   "id, external_id, user_id, sort_order, transaction_date, direction, type, channel, rail, display_name, card_masked, funding_card_masked, counterparty_card_masked, counterparty_user_id, merchant_name, merchant_country, mcc, issuer_country, iban_masked, bank_country, payment_reference, asset, wallet_masked, counterparty_name, reject_reason, status_code, reason_code, status_display, reason_display, status, amount, amount_usd, currency, organization_id, created_at, updated_at" as const;

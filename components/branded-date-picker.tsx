@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  brandedDatePopoverClassName,
+  brandedDisabledControlClassName,
+  brandedFormControlTriggerClassName,
+  uiCx,
+} from "@/shared/ui/control-styles";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type BrandedDatePickerProps = {
@@ -33,10 +39,6 @@ const LONG_MONTH_NAMES = [
   "December",
 ];
 const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-
-function joinClasses(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(" ");
-}
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -169,7 +171,7 @@ function NavButton({
       <span className="relative flex items-center justify-center">
         <ArrowIcon direction={direction} />
         {double ? (
-          <span className={joinClasses("absolute", direction === "left" ? "left-[-4px]" : "right-[-4px]")}>
+          <span className={uiCx("absolute", direction === "left" ? "left-[-4px]" : "right-[-4px]")}>
             <ArrowIcon direction={direction} />
           </span>
         ) : null}
@@ -232,8 +234,9 @@ export function BrandedDatePicker({
           setVisibleMonth(toFirstDayOfMonth(selectedDate ?? today));
           setOpen((current) => !current);
         }}
-        className={joinClasses(
-          "dark-input flex h-11 w-full items-center justify-between gap-3 rounded-[0.95rem] px-4 text-left text-sm outline-none focus:ring-1 focus:ring-[var(--brand-ring)] disabled:opacity-60",
+        className={uiCx(
+          brandedFormControlTriggerClassName,
+          disabled && brandedDisabledControlClassName,
           selectedDate ? "text-slate-800" : "text-slate-400",
         )}
       >
@@ -244,7 +247,7 @@ export function BrandedDatePicker({
       </button>
 
       {open ? (
-        <div className="absolute left-0 top-full z-40 mt-1.5 w-[18.25rem] max-w-[min(18.25rem,calc(100vw-3rem))] overflow-hidden rounded-[1rem] border border-[rgb(191_208_216_/_0.94)] bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(241,247,249,0.992))] p-3 shadow-[0_22px_42px_rgba(18,31,46,0.16),inset_0_1px_0_rgba(255,255,255,0.82)]">
+        <div className={brandedDatePopoverClassName}>
           <div className="flex flex-col gap-2">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Pick a date</p>
@@ -304,7 +307,7 @@ export function BrandedDatePicker({
                     setVisibleMonth(toFirstDayOfMonth(cell.date));
                     setOpen(false);
                   }}
-                  className={joinClasses(
+                  className={uiCx(
                     "flex h-8 items-center justify-center rounded-[0.65rem] border text-[0.8125rem] font-semibold leading-none transition duration-150",
                     isSelected
                       ? "border-transparent bg-[linear-gradient(180deg,var(--brand-600),var(--brand-700))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_10px_18px_rgba(24,42,59,0.18)]"

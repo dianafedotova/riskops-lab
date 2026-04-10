@@ -1,15 +1,34 @@
 "use client";
 
-import { AlertActivityLog } from "@/components/alert-activity-log";
 import { AlertDetailSkeleton } from "@/components/alert-detail-skeleton";
 import { AlertReviewAssignmentsPanel } from "@/components/alert-review-assignments-panel";
 import { ObjectNotePanel } from "@/components/object-note-panel";
 import { QueryErrorBanner } from "@/components/query-error";
 import { ReviewThreadInternalNotePanel } from "@/components/review-thread-internal-note-panel";
 import { ReviewSubmissionsPanel } from "@/components/review-submissions-panel";
-import { SimulatorCommentsPanel } from "@/components/simulator-comments-panel";
 import { SimulatorAlertForm } from "@/components/simulator-alert-form";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
+import { AlertDecisionPanel } from "@/features/alerts/detail/alert-decision-panel";
+import {
+  ALERT_DETAIL_COLS,
+  type AlertWithRuleCode,
+  type Decision,
+  decisionBadgeClass,
+  formatReviewEvaluation,
+  formatReviewSubmissionState,
+  formatRuleDisplay,
+  formatSeverityLabel,
+  formatStatusLabel,
+  getDecisionLabel,
+  latestReviewSubmission,
+  proposedStatusForDecision,
+  severityBadgeClass,
+  statusBadgeClass,
+  typeBadgeClass,
+} from "@/features/alerts/detail/alert-detail-presenters";
+import { AlertReviewModeHeader } from "@/features/alerts/detail/alert-review-mode-header";
+import { AlertStaffReviewWorkspacePanel } from "@/features/alerts/detail/alert-staff-review-workspace-panel";
+import { AlertTraineeReviewWorkspacePanels } from "@/features/alerts/detail/alert-trainee-review-workspace-panels";
 import { getAlertContextIds } from "@/lib/alerts/identity";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { useReviewWorkspaceActor } from "@/lib/hooks/use-review-workspace-actor";
@@ -27,157 +46,11 @@ import {
 import { listReviewSubmissionsDirect } from "@/lib/services/review-submissions";
 import { createTraineeDecision, displayStatusFromTraineeDecisionOnAlert } from "@/lib/services/trainee-decisions";
 import { createAlertReviewThreadForContext, fetchAlertReviewThreadById } from "@/lib/services/review-threads";
-import { formatPostgrestError } from "@/lib/trainee-user-watchlist";
+import { formatPostgrestError } from "@/shared/lib/postgrest";
 import type { AlertRow, ReviewSubmissionRow, ReviewThreadRow, UserRow } from "@/lib/types";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-type Decision = "false_positive" | "true_positive" | "info_requested" | "escalated";
-
-type AlertWithRuleCode = AlertRow & { rule_code?: string | null; rule_name?: string | null };
-
-const ALERT_DETAIL_COLS =
-  "id, internal_id, user_id, alert_type, severity, status, description, rule_code, rule_name, created_at, updated_at, alert_date, decision" as const;
-
-function proposedStatusForDecision(decision: Decision): string {
-  if (decision === "false_positive") return "resolved";
-  if (decision === "true_positive") return "resolved";
-  if (decision === "info_requested") return "in_review";
-  return "in_review";
-}
-
-function getDecisionLabel(decision: string | null | undefined): string {
-  const d = (decision ?? "").trim();
-  if (!d) return "Not set";
-  if (d === "false_positive") return "False Positive";
-  if (d === "true_positive") return "True Positive";
-  if (d === "info_requested") return "Info requested";
-  if (d === "escalated") return "Escalated";
-  return d;
-}
-
-function formatRuleDisplay(ruleCode: string | null | undefined, ruleName: string | null | undefined): string {
-  const code = (ruleCode ?? "").trim();
-  const name = (ruleName ?? "").trim();
-  if (!code && !name) return "—";
-  if (code && name) return `${code}: ${name}`;
-  return code || name;
-}
-
-function formatSeverityLabel(value: string | null | undefined): string {
-  const raw = (value ?? "").trim().toLowerCase();
-  if (!raw) return "Unknown";
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
-}
-
-function formatStatusLabel(value: string | null | undefined): string {
-  const raw = (value ?? "").trim().toLowerCase();
-  if (!raw) return "—";
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
-}
-
-const statusBadgeClass = (status: string | null) => {
-  const s = (status ?? "").trim().toLowerCase();
-  if (s === "open") return "ui-badge-blue";
-  if (s === "in review") return "ui-badge-teal";
-  if (s === "resolved") return "ui-badge-neutral";
-  if (s === "closed") return "ui-badge-neutral";
-  if (s === "monitoring") return "ui-badge-amber";
-  if (s === "escalated") return "ui-badge-violet";
-  return "ui-badge-neutral";
-};
-
-const severityBadgeClass = (severity: string | null) => {
-  const s = (severity ?? "").trim().toLowerCase();
-  if (s === "critical") return "ui-badge-rose";
-  if (s === "high") return "ui-badge-rose";
-  if (s === "medium") return "ui-badge-amber";
-  if (s === "low") return "ui-badge-emerald";
-  return "ui-badge-neutral";
-};
-
-const typeBadgeClass = (type: string | null) => {
-  const s = (type ?? "").trim().toLowerCase();
-  if (s === "aml") return "ui-badge-indigo";
-  if (s === "fraud") return "ui-badge-blue";
-  return "ui-badge-neutral";
-};
-
-const decisionBadgeClass = (decision: string | null | undefined) => {
-  const d = (decision ?? "").trim();
-  if (!d) return "ui-badge-neutral";
-  if (d === "false_positive") return "ui-badge-emerald";
-  if (d === "true_positive") return "ui-badge-rose";
-  if (d === "info_requested") return "ui-badge-teal";
-  if (d === "escalated") return "ui-badge-amber";
-  return "ui-badge-neutral";
-};
-
-function reviewSubmissionStateBadgeClass(state: string | null | undefined) {
-  const value = (state ?? "").trim().toLowerCase();
-  if (value === "submitted") return "ui-badge-blue";
-  if (value === "in_review") return "ui-badge-teal";
-  if (value === "changes_requested") return "ui-badge-rose";
-  if (value === "approved") return "ui-badge-emerald";
-  return "ui-badge-neutral";
-}
-
-function formatReviewSubmissionState(state: string | null | undefined): string {
-  const value = (state ?? "").trim().toLowerCase();
-  if (!value) return "Draft case";
-  if (value === "in_review") return "In review";
-  if (value === "changes_requested") return "Changes requested";
-  return value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
-}
-
-function formatReviewEvaluation(value: string | null | undefined): string {
-  const normalized = (value ?? "").trim().toLowerCase();
-  if (!normalized) return "Not graded";
-  if (normalized === "needs_work") return "Needs a full redo";
-  if (normalized === "developing") return "On the right track";
-  if (normalized === "solid") return "Good work";
-  if (normalized === "excellent") return "Outstanding";
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1).replaceAll("_", " ");
-}
-
-function shortThreadId(value: string | null | undefined): string {
-  const normalized = (value ?? "").trim();
-  if (!normalized) return "—";
-  if (normalized.length <= 12) return normalized;
-  return `${normalized.slice(0, 8)}…${normalized.slice(-4)}`;
-}
-
-const DECISION_BUTTON_BASE =
-  "ui-btn min-h-0 justify-center rounded-[1rem] px-4 py-2 text-sm font-semibold tracking-[-0.01em] disabled:cursor-not-allowed disabled:opacity-50";
-
-const decisionOptionClass = (key: Decision, selected: boolean) => {
-  if (selected) {
-    if (key === "info_requested") {
-      return "border border-[rgb(101_139_147_/_0.94)] bg-[linear-gradient(180deg,rgb(123_162_169_/_0.98),rgb(92_130_138_/_0.98))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_16px_rgba(24,42,59,0.15)]";
-    }
-    if (key === "false_positive") {
-      return "border border-transparent bg-[linear-gradient(180deg,var(--brand-500),var(--brand-700))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_18px_rgba(24,42,59,0.22)] hover:bg-[linear-gradient(180deg,var(--brand-500),var(--brand-700))] hover:text-white hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_18px_rgba(24,42,59,0.22)]";
-    }
-    if (key === "true_positive") {
-      return "border border-transparent bg-[linear-gradient(180deg,var(--brand-dot),#7f1724)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_18px_rgba(24,42,59,0.2)]";
-    }
-    if (key === "escalated") {
-      return "border border-transparent bg-[linear-gradient(180deg,var(--warning-600),#9a6a36)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_18px_rgba(24,42,59,0.2)]";
-    }
-    return "ui-btn-primary";
-  }
-  if (key === "info_requested") {
-    return "ui-btn-secondary border-[rgb(193_221_226_/_0.95)] bg-[linear-gradient(180deg,rgb(255_255_255_/_0.98),rgb(243_249_250_/_0.98))] text-[rgb(57_103_112)] shadow-[0_6px_12px_rgba(120,160,168,0.05)] hover:border-[rgb(160_196_202_/_0.96)] hover:bg-[linear-gradient(180deg,rgb(236_247_248_/_0.98),rgb(223_239_242_/_0.98))] hover:text-[rgb(48_90_98)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_8px_14px_rgba(120,160,168,0.1)]";
-  }
-  if (key === "escalated") {
-    return "ui-btn-secondary border-amber-300 text-[var(--warning-600)] shadow-none hover:border-[rgb(191_144_84_/_0.96)] hover:bg-[linear-gradient(180deg,rgb(250_242_220_/_0.98),rgb(243_229_193_/_0.98))] hover:text-[var(--warning-600)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_10px_18px_rgba(24,42,59,0.12)]";
-  }
-  if (key === "false_positive") {
-    return "ui-btn-secondary border-[rgb(196_220_214_/_0.95)] text-[var(--brand-700)] shadow-none hover:border-transparent hover:bg-[linear-gradient(180deg,var(--brand-500),var(--brand-700))] hover:text-white hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_18px_rgba(24,42,59,0.22)]";
-  }
-  return "ui-btn-secondary border-[rgb(221_189_196_/_0.94)] text-[var(--brand-dot)] shadow-none hover:border-transparent hover:bg-[linear-gradient(180deg,var(--brand-dot),#7f1724)] hover:text-white hover:shadow-[0_10px_18px_rgba(24,42,59,0.18)]";
-};
 
 export default function AlertDetailsPage() {
   const { appUser, hasStaffAccess, isTraineeActor } = useReviewWorkspaceActor();
@@ -203,8 +76,6 @@ export default function AlertDetailsPage() {
   const [reviewThreadsSubmissions, setReviewThreadsSubmissions] = useState<ReviewSubmissionRow[]>([]);
   const [reviewThreadsWithRootNotes, setReviewThreadsWithRootNotes] = useState<string[]>([]);
   const [reviewThreadsReloadTick, setReviewThreadsReloadTick] = useState(0);
-  const [draftsExpanded, setDraftsExpanded] = useState(false);
-  const [submittedExpanded, setSubmittedExpanded] = useState(false);
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [unassignBusy, setUnassignBusy] = useState(false);
@@ -586,51 +457,12 @@ export default function AlertDetailsPage() {
   const traineeAssignmentSummaryLabel = assignedToMe ? "Assigned to me" : "Unassigned";
   const traineeAssignmentSummaryBadgeClass = assignedToMe ? "ui-badge-teal" : "ui-badge-neutral";
 
-  const reviewThreadsSubmissionsForUi = useMemo(() => {
-    if (!isTraineeActor) return reviewThreadsSubmissions;
-    const maxVersionByThread = new Map<string, number>();
-    for (const submission of reviewThreadsSubmissions) {
-      const prev = maxVersionByThread.get(submission.thread_id) ?? 0;
-      if (submission.submission_version > prev) {
-        maxVersionByThread.set(submission.thread_id, submission.submission_version);
-      }
-    }
-    return reviewThreadsSubmissions.filter(
-      (submission) => submission.submission_version === (maxVersionByThread.get(submission.thread_id) ?? 0)
-    );
-  }, [isTraineeActor, reviewThreadsSubmissions]);
-
-  const submissionsByThreadId = useMemo(() => {
-    const map = new Map<string, ReviewSubmissionRow[]>();
-    for (const submission of reviewThreadsSubmissionsForUi) {
-      const list = map.get(submission.thread_id) ?? [];
-      list.push(submission);
-      map.set(submission.thread_id, list);
-    }
-    return map;
-  }, [reviewThreadsSubmissionsForUi]);
-
-  const draftReviewThreads = useMemo(
-    () => reviewThreads.filter((thread) => (submissionsByThreadId.get(thread.id) ?? []).length === 0),
-    [reviewThreads, submissionsByThreadId]
-  );
-
-  const draftReviewThreadsWithNotes = useMemo(() => {
-    const threadsWithNotes = new Set(reviewThreadsWithRootNotes);
-    return draftReviewThreads.filter((thread) => threadsWithNotes.has(thread.id));
-  }, [draftReviewThreads, reviewThreadsWithRootNotes]);
-
-  const submittedReviewThreads = useMemo(
-    () => reviewThreads.filter((thread) => (submissionsByThreadId.get(thread.id) ?? []).length > 0),
-    [reviewThreads, submissionsByThreadId]
-  );
-
   const deleteDraftReviewThread = useCallback(
     async (threadId: string) => {
       if (!appUser?.id) return;
 
-      const threadSubmissions = submissionsByThreadId.get(threadId) ?? [];
-      if (threadSubmissions.length > 0) {
+      const hasSubmissions = reviewThreadsSubmissions.some((submission) => submission.thread_id === threadId);
+      if (hasSubmissions) {
         throw new Error("Submitted cases cannot be deleted.");
       }
 
@@ -656,7 +488,7 @@ export default function AlertDetailsPage() {
       setReviewThreadsSubmissions((current) => current.filter((submission) => submission.thread_id !== threadId));
       setReviewThreadsReloadTick((tick) => tick + 1);
     },
-    [appUser?.id, canonicalAsideThreadId, submissionsByThreadId]
+    [appUser?.id, canonicalAsideThreadId, reviewThreadsSubmissions]
   );
 
   const onPickDecision = useCallback(
@@ -729,14 +561,10 @@ export default function AlertDetailsPage() {
         ? "resolved"
         : displayStatusFromTraineeDecisionOnAlert(null, alert?.status);
   const isStaffReviewMode = hasStaffAccess && !isTraineeActor && Boolean(reviewThreadFromUrl);
-  const latestStaffSubmission = useMemo(() => {
-    if (!staffReviewSubmissions.length) return null;
-    return staffReviewSubmissions.reduce<ReviewSubmissionRow | null>((latest, submission) => {
-      if (!latest) return submission;
-      if (submission.submission_version > latest.submission_version) return submission;
-      return latest;
-    }, null);
-  }, [staffReviewSubmissions]);
+  const latestStaffSubmission = useMemo(
+    () => latestReviewSubmission(staffReviewSubmissions),
+    [staffReviewSubmissions]
+  );
   const activeThreadReference = activeReviewThread?.id ?? canonicalAsideThreadId;
   const activeThreadStatusLabel = latestStaffSubmission
     ? formatReviewSubmissionState(latestStaffSubmission.review_state)
@@ -790,147 +618,6 @@ export default function AlertDetailsPage() {
     },
     [alert, appUser?.id, decisionsThreadId, effectiveDecision, isTraineeActor, latestDecisionRow?.decision, latestDecisionRow?.rationale, rationale]
   );
-  const traineeReviewWorkspacePanels = isTraineeActor ? (
-    <div className="space-y-5">
-      {reviewWorkspaceError ? <p className="text-sm text-rose-600">{reviewWorkspaceError}</p> : null}
-      <AlertActivityLog alertId={alertContext.publicId} refreshKey={activityLogRefreshKey} />
-      <SimulatorCommentsPanel
-        threadId={null}
-        reviewMode
-        privateAlertInternalId={null}
-        privateSimulatorUserId={null}
-        submissions={[]}
-        createThread={createReviewThread}
-        prepareTraineeThread={syncDecisionToReviewThread}
-        showItems={false}
-        showStatusMessages={false}
-        showTitle={false}
-        withTopBorder={false}
-        flushTop
-        emptyMessage="No notes in this workspace yet."
-        traineeSubmittedSummaryLayout="alert"
-      />
-      <div
-        className={`evidence-shell rounded-[1rem] border-[rgb(210_217_229_/_0.95)] bg-[linear-gradient(180deg,rgba(248,250,253,0.987),rgba(235,240,248,0.992))] ${
-          draftsExpanded
-            ? "p-4 shadow-[inset_0_2px_8px_rgba(197,206,220,0.18),inset_0_1px_0_rgba(255,255,255,0.94),0_9px_20px_rgba(18,32,46,0.08)] sm:p-5"
-            : "px-4 py-3 shadow-[inset_0_3px_10px_rgba(194,203,218,0.2),inset_0_1px_0_rgba(255,255,255,0.96),0_7px_16px_rgba(18,32,46,0.06)] sm:px-5 sm:py-4"
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => setDraftsExpanded((open) => !open)}
-          aria-expanded={draftsExpanded}
-          className="group flex w-full items-center justify-between gap-3 text-left outline-none transition focus-visible:rounded-[0.9rem] focus-visible:ring-2 focus-visible:ring-[var(--brand-400)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
-        >
-          <h3 className="text-left text-[0.75rem] font-bold uppercase tracking-[0.14em] text-[var(--app-shell-bg)]">
-            Drafts
-          </h3>
-          <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition group-hover:text-slate-800">
-            <svg
-              viewBox="0 0 12 12"
-              aria-hidden="true"
-              className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition duration-200 group-hover:text-slate-600 ${
-                draftsExpanded ? "rotate-90" : "rotate-0"
-              }`}
-              fill="none"
-            >
-              <path
-                d="M4 2.5 7.5 6 4 9.5"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            {draftsExpanded ? "Hide drafts" : "Show drafts"}
-          </span>
-        </button>
-        <div aria-hidden={!draftsExpanded} className={draftsExpanded ? "mt-3 space-y-3" : "hidden"}>
-          {draftReviewThreadsWithNotes.length > 0 ? (
-            draftReviewThreadsWithNotes.map((thread) => (
-              <SimulatorCommentsPanel
-                key={thread.id}
-                threadId={thread.id}
-                reviewMode
-                privateAlertInternalId={null}
-                privateSimulatorUserId={null}
-                submissions={[]}
-                showComposer={false}
-                onDeleteDraftThread={deleteDraftReviewThread}
-                showTitle={false}
-                withTopBorder={false}
-                emptyMessage=""
-                traineeSubmittedSummaryLayout="alert"
-              />
-            ))
-          ) : (
-            <div className="empty-state">No drafts yet.</div>
-          )}
-        </div>
-      </div>
-      {submittedReviewThreads.length > 0 ? (
-        <div
-          className={`evidence-shell rounded-[1rem] border-[rgb(210_217_229_/_0.95)] bg-[linear-gradient(180deg,rgba(248,250,253,0.987),rgba(235,240,248,0.992))] ${
-            submittedExpanded
-              ? "p-4 shadow-[inset_0_2px_8px_rgba(197,206,220,0.18),inset_0_1px_0_rgba(255,255,255,0.94),0_9px_20px_rgba(18,32,46,0.08)] sm:p-5"
-              : "px-4 py-3 shadow-[inset_0_3px_10px_rgba(194,203,218,0.2),inset_0_1px_0_rgba(255,255,255,0.96),0_7px_16px_rgba(18,32,46,0.06)] sm:px-5 sm:py-4"
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => setSubmittedExpanded((open) => !open)}
-            aria-expanded={submittedExpanded}
-            className="group flex w-full items-center justify-between gap-3 text-left outline-none transition focus-visible:rounded-[0.9rem] focus-visible:ring-2 focus-visible:ring-[var(--brand-400)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
-          >
-            <h3 className="text-left text-[0.75rem] font-bold uppercase tracking-[0.14em] text-[var(--app-shell-bg)]">
-              Review cases
-            </h3>
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition group-hover:text-slate-800">
-              <svg
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-                className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition duration-200 group-hover:text-slate-600 ${
-                  submittedExpanded ? "rotate-90" : "rotate-0"
-                }`}
-                fill="none"
-              >
-                <path
-                  d="M4 2.5 7.5 6 4 9.5"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {submittedExpanded ? "Hide cases" : "Show cases"}
-            </span>
-          </button>
-          <div aria-hidden={!submittedExpanded} className={submittedExpanded ? "mt-3 space-y-4" : "hidden"}>
-            {submittedReviewThreads.map((thread) => {
-              const threadSubmissions = submissionsByThreadId.get(thread.id) ?? [];
-
-              return (
-                <SimulatorCommentsPanel
-                  key={thread.id}
-                  threadId={thread.id}
-                  reviewMode
-                  privateAlertInternalId={null}
-                  privateSimulatorUserId={null}
-                  submissions={threadSubmissions}
-                  showComposer={false}
-                  showTitle={false}
-                  withTopBorder={false}
-                  emptyMessage="Nothing has been submitted from this case yet."
-                  traineeSubmittedSummaryLayout="alert"
-                />
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  ) : null;
 
   if (loading) {
     return <AlertDetailSkeleton />;
@@ -966,126 +653,38 @@ export default function AlertDetailsPage() {
   }
 
   const staffReviewModeHeader = isStaffReviewMode ? (
-    <div className="evidence-shell p-4 sm:p-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="ui-badge ui-badge-amber">Review mode</span>
-            <span className={`ui-badge ${reviewSubmissionStateBadgeClass(latestStaffSubmission?.review_state)}`}>
-              {activeThreadStatusLabel}
-            </span>
-            <span className="ui-badge ui-badge-neutral">{activeThreadSummary}</span>
-          </div>
-          <h2 className="mt-3 text-[1.05rem] font-semibold tracking-[-0.02em] text-slate-900 sm:text-[1.16rem]">
-            Review case workspace for this alert
-          </h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/admin/review" className="ui-btn ui-btn-secondary min-h-0 rounded-[1rem] px-3.5 py-2 text-sm shadow-none">
-            Back to Review queue
-          </Link>
-          {alert.user_id ? (
-            <Link
-              href={`/admin/trainees/${alert.user_id}`}
-              className="ui-btn ui-btn-secondary min-h-0 rounded-[1rem] px-3.5 py-2 text-sm shadow-none"
-            >
-              View trainee profile
-            </Link>
-          ) : null}
-        </div>
-      </div>
-
-      {reviewWorkspaceError ? <p className="mt-4 text-sm text-rose-600">{reviewWorkspaceError}</p> : null}
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[1rem] border border-slate-200/80 bg-white/92 px-4 py-3 shadow-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Case</p>
-          <p className="mt-1.5 font-mono text-sm text-slate-800">{shortThreadId(activeThreadReference)}</p>
-        </div>
-        <div className="rounded-[1rem] border border-slate-200/80 bg-white/92 px-4 py-3 shadow-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Snapshots</p>
-          <p className="mt-1.5 text-sm font-medium text-slate-900">{staffReviewSubmissions.length}</p>
-        </div>
-        <div className="rounded-[1rem] border border-slate-200/80 bg-white/92 px-4 py-3 shadow-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Latest activity</p>
-          <p className="mt-1.5 text-sm font-medium text-slate-900">{activeThreadTimestampLabel}</p>
-        </div>
-        <div className="rounded-[1rem] border border-slate-200/80 bg-white/92 px-4 py-3 shadow-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Evaluation</p>
-          <p className="mt-1.5 text-sm font-medium text-slate-900">{activeThreadEvaluationLabel}</p>
-        </div>
-      </div>
-    </div>
+    <AlertReviewModeHeader
+      reviewWorkspaceError={reviewWorkspaceError}
+      latestStaffSubmission={latestStaffSubmission}
+      activeThreadReference={activeThreadReference}
+      activeThreadStatusLabel={activeThreadStatusLabel}
+      activeThreadSummary={activeThreadSummary}
+      activeThreadTimestampLabel={activeThreadTimestampLabel}
+      activeThreadEvaluationLabel={activeThreadEvaluationLabel}
+      traineeUserId={alert.user_id}
+      snapshotCount={staffReviewSubmissions.length}
+    />
   ) : null;
 
   const staffReviewWorkspacePanel = isStaffReviewMode ? (
-    <div className="evidence-shell p-4 sm:p-5">
-      <div>
-        <h3 className="text-left text-[0.75rem] font-bold uppercase tracking-[0.14em] text-[var(--app-shell-bg)]">
-          Review case
-        </h3>
-      </div>
-      <div className="mt-2">
-        <SimulatorCommentsPanel
-          threadId={canonicalAsideThreadId}
-          reviewMode
-          privateAlertInternalId={null}
-          privateSimulatorUserId={null}
-          submissions={staffSubmissionsThreadId ? staffReviewSubmissions : []}
-          adminModeOverride="reply"
-          showItems={Boolean(staffSubmissionsThreadId)}
-          showStatusMessages={false}
-          showTitle={false}
-          withTopBorder={false}
-          flushTop
-          emptyMessage="No notes in this workspace yet."
-          traineeSubmittedSummaryLayout="alert"
-          showQaReplyAction={false}
-        />
-      </div>
-    </div>
+    <AlertStaffReviewWorkspacePanel
+      threadId={canonicalAsideThreadId}
+      submissions={staffSubmissionsThreadId ? staffReviewSubmissions : []}
+    />
   ) : null;
 
   const alertDecisionActionPanel =
     isTraineeActor || hasStaffAccess ? (
-      <div className="evidence-shell p-4 sm:p-5">
-        <h3 className="heading-section" style={{ color: "var(--app-shell-bg)" }}>
-          Decision
-        </h3>
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {(
-            [
-              ["info_requested", "Info requested"],
-              ["escalated", "Escalated"],
-              ["false_positive", "False Positive"],
-              ["true_positive", "True Positive"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              disabled={submitBusy}
-              onClick={() => void onPickDecision(key)}
-              className={`${DECISION_BUTTON_BASE} ${decisionOptionClass(key, effectiveDecision === key)}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {submitError ? <p className="mt-2 text-xs text-rose-600">{submitError}</p> : null}
-        {isTraineeActor ? (
-          <div className="mt-2 flex justify-end">
-            <button
-              type="button"
-              onClick={() => void onResetDecision()}
-              disabled={resetBusy || decisionsLoading}
-              className="text-[11px] text-slate-500 underline decoration-dotted underline-offset-2 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {resetBusy ? "Resetting..." : "Reset decision"}
-            </button>
-          </div>
-        ) : null}
-      </div>
+      <AlertDecisionPanel
+        effectiveDecision={effectiveDecision}
+        submitBusy={submitBusy}
+        submitError={submitError}
+        resetBusy={resetBusy}
+        decisionsLoading={decisionsLoading}
+        canReset={isTraineeActor}
+        onPickDecision={onPickDecision}
+        onResetDecision={onResetDecision}
+      />
     ) : null;
 
   const alertDescriptionPanel = (
@@ -1327,7 +926,19 @@ export default function AlertDetailsPage() {
           saveButtonLabel="Save alert note"
         />
       ) : null}
-      {traineeReviewWorkspacePanels}
+      {isTraineeActor ? (
+        <AlertTraineeReviewWorkspacePanels
+          reviewWorkspaceError={reviewWorkspaceError}
+          alertPublicId={alertContext.publicId}
+          activityLogRefreshKey={activityLogRefreshKey}
+          reviewThreads={reviewThreads}
+          reviewThreadsSubmissions={reviewThreadsSubmissions}
+          reviewThreadsWithRootNotes={reviewThreadsWithRootNotes}
+          createReviewThread={createReviewThread}
+          syncDecisionToReviewThread={syncDecisionToReviewThread}
+          deleteDraftReviewThread={deleteDraftReviewThread}
+        />
+      ) : null}
     </div>
   );
 

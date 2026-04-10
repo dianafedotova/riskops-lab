@@ -72,9 +72,7 @@ import {
   getTraineeUserStatusOverride,
   upsertTraineeUserStatusOverride,
 } from "@/lib/services/trainee-user-status-overrides";
-import {
-  formatPostgrestError,
-} from "@/lib/trainee-user-watchlist";
+import { formatPostgrestError } from "@/shared/lib/postgrest";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
