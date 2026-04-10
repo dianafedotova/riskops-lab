@@ -7,13 +7,24 @@ function compactHeaderValue(value: string): string {
   return value.replace(/\s{2,}/g, " ").trim();
 }
 
+function getOrigin(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
+}
+
 export function buildSecurityHeaders(options?: {
   isProduction?: boolean;
   supabaseUrl?: string | null;
+  sentryDsn?: string | null;
 }): SecurityHeader[] {
   const isProduction = options?.isProduction ?? false;
   const supabaseUrl = options?.supabaseUrl?.trim() ?? "";
-  const supabaseOrigin = supabaseUrl ? new URL(supabaseUrl).origin : "";
+  const sentryDsn = options?.sentryDsn?.trim() ?? "";
+  const supabaseOrigin = getOrigin(supabaseUrl);
+  const sentryOrigin = getOrigin(sentryDsn);
 
   const connectSources = [
     "'self'",
@@ -22,6 +33,11 @@ export function buildSecurityHeaders(options?: {
     "https://vitals.vercel-insights.com",
     "https://*.ingest.sentry.io",
   ];
+
+  if (sentryOrigin) {
+    connectSources.push(sentryOrigin);
+  }
+
   if (supabaseOrigin) {
     connectSources.push(supabaseOrigin);
     if (supabaseOrigin.startsWith("https://")) {

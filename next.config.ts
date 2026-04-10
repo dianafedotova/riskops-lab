@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
         headers: buildSecurityHeaders({
           isProduction: process.env.NODE_ENV === "production",
           supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN,
         }),
       },
     ];

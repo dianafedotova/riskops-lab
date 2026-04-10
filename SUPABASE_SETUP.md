@@ -12,6 +12,13 @@ RiskOps Lab is `migrations-first`. Do not create product tables manually in Tabl
 
 Use the Supabase CLI against the target project and apply everything in `supabase/migrations/`.
 
+For GitHub-based auto-migrations, this repo now expects:
+
+- GitHub Actions secret `SUPABASE_ACCESS_TOKEN`
+- GitHub Actions secret `SUPABASE_DB_PASSWORD`
+
+When `CI` runs on `main` (or manually via `workflow_dispatch`), it links to project `wadctkaeltnizmbpwfsv` and runs `supabase db push --linked --include-all`.
+
 Important migrations for public beta:
 
 - `20260327231227_remote_schema.sql`

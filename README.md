@@ -37,6 +37,13 @@ Public beta training workspace for fraud and AML investigation practice. The pro
 - `SENTRY_PROJECT`
 - `SENTRY_ENVIRONMENT` (optional)
 
+## Required GitHub Actions secrets
+
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_DB_PASSWORD`
+
+`main` now auto-applies pending SQL migrations to the linked Supabase project after `lint`, `test`, and `build` pass in CI. The linked production project ref is `wadctkaeltnizmbpwfsv`.
+
 ## Public beta auth contract
 
 - Open signup is enabled.
@@ -68,15 +75,16 @@ npm run build
 ## Deployment sequence
 
 1. Confirm production env vars are present in Vercel and Supabase.
-2. Apply all pending Supabase migrations.
+2. Confirm GitHub Actions secrets `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` are set.
 3. Verify Supabase Auth settings:
    - Site URL matches `NEXT_PUBLIC_SITE_URL`
    - Redirect URLs include `/auth/callback` and `/reset-password`
    - Email confirmations enabled
    - Turnstile enabled
    - Google provider enabled
-4. Deploy the Next.js app.
-5. Run the smoke checklist below.
+4. Merge to `main` or run the `CI` workflow manually so the migration job applies pending SQL.
+5. Deploy the Next.js app.
+6. Run the smoke checklist below.
 
 ## Smoke checklist
 
