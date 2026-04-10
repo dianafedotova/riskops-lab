@@ -2,6 +2,7 @@
 
 import { FilterSelect } from "@/components/filter-select";
 import { buildOptionsWithCurrent, SimulatorFormField, SimulatorFormInput } from "@/components/simulator-form-primitives";
+import { formatTransactionAmountUsd } from "@/lib/format";
 import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
 import { createSimulatorTransaction, deleteSimulatorTransaction, updateSimulatorTransaction } from "@/lib/services/simulator-transactions";
 import { createClient } from "@/lib/supabase";
@@ -12,7 +13,6 @@ import {
   findBankTransferReasonByCode,
   findBankTransferStatusByCode,
   findRejectReasonByCode,
-  formatApproximateUsd,
   formatMaskedCardReference,
   getBankTransferStatusCodeForStatus,
   getPaymentMethodCardOptions,
@@ -24,7 +24,6 @@ import {
   isCanonicalTransactionType,
   isDirectionLockedForTransactionType,
   getSupportedTransactionCurrencies,
-  isSupportedTransactionCurrency,
   MCC_OPTIONS,
   normalizeTransactionCurrencyForType,
   normalizeTransactionChannelForType,
@@ -271,10 +270,16 @@ function formatTransactionAmountPreview(values: TransactionFormValues): string {
   const currency = values.currency.trim().toUpperCase();
   if (!amount || !currency) return "—";
   if (!values.amount_usd) return `${amount} ${currency}`;
-  return `${amount} ${currency} (~${formatApproximateUsd(Number(values.amount_usd))})`;
+  return `${amount} ${currency} (${formatTransactionAmountUsd(Number(values.amount_usd), values.direction)})`;
 }
 
 export function SimulatorTransactionForm(props: SimulatorTransactionFormProps) {
+  const formStateKey = `${props.mode}:${props.userId}:${props.initialValue?.id ?? "new"}:${props.initialValue?.updated_at ?? props.initialValue?.created_at ?? ""}`;
+
+  return <SimulatorTransactionFormBody key={formStateKey} {...props} />;
+}
+
+function SimulatorTransactionFormBody(props: SimulatorTransactionFormProps) {
   const { viewer, mode, userId, paymentMethods, initialValue, submitLabel, onSaved, onDeleted, onCancel } = props;
   const [values, setValues] = useState<TransactionFormValues>(() => buildTransactionFormValues(initialValue));
   const [saving, setSaving] = useState(false);
@@ -282,39 +287,17 @@ export function SimulatorTransactionForm(props: SimulatorTransactionFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [p2pLookupLoading, setP2pLookupLoading] = useState(false);
   const [p2pLookupError, setP2pLookupError] = useState<string | null>(null);
+  const counterpartyUserId = values.counterparty_user_id.trim();
+  const shouldLookupP2pCounterparty = values.type === "P2P transfer" && counterpartyUserId.length > 0;
 
   useEffect(() => {
-    setValues(buildTransactionFormValues(initialValue));
-    setP2pLookupError(null);
-    setP2pLookupLoading(false);
-  }, [initialValue]);
-
-  useEffect(() => {
-    if (values.type !== "P2P transfer") {
-      setP2pLookupError(null);
-      setP2pLookupLoading(false);
-      return;
-    }
-
-    const counterpartyUserId = values.counterparty_user_id.trim();
-    if (!counterpartyUserId) {
-      setP2pLookupError(null);
-      setP2pLookupLoading(false);
-      if (values.counterparty_name) {
-        setValues((current) =>
-          current.type === "P2P transfer" && current.counterparty_name
-            ? syncDerivedValues({ ...current, counterparty_name: "" })
-            : current
-        );
-      }
-      return;
-    }
+    if (!shouldLookupP2pCounterparty) return;
 
     let cancelled = false;
-    setP2pLookupLoading(true);
-    setP2pLookupError(null);
 
     (async () => {
+      setP2pLookupLoading(true);
+      setP2pLookupError(null);
       const supabase = createClient();
       const { data, error: lookupError } = await supabase
         .from("users")
@@ -349,7 +332,7 @@ export function SimulatorTransactionForm(props: SimulatorTransactionFormProps) {
     return () => {
       cancelled = true;
     };
-  }, [values.counterparty_name, values.counterparty_user_id, values.type]);
+  }, [counterpartyUserId, shouldLookupP2pCounterparty]);
 
   const cardOptions = useMemo(
     () => buildCardSelectOptions(paymentMethods, values.card_masked),
@@ -406,6 +389,15 @@ export function SimulatorTransactionForm(props: SimulatorTransactionFormProps) {
   const channelLocked = channelMenuOptions.length === 1;
   const legacyCurrencyUnsupported =
     values.currency.trim() !== "" && !(getSupportedTransactionCurrencies(values.type) as readonly string[]).includes(values.currency.trim().toUpperCase());
+  const p2pLookupHelperText = !shouldLookupP2pCounterparty
+    ? "Description will resolve from the selected user automatically."
+    : p2pLookupLoading
+      ? "Looking up counterparty…"
+      : p2pLookupError
+        ? p2pLookupError
+        : values.counterparty_name
+          ? `Resolved name: ${values.counterparty_name}`
+          : "Description will resolve from the selected user automatically.";
 
   const handleChange = (field: keyof TransactionFormValues, nextValue: string) => {
     setValues((current) => {
@@ -605,7 +597,11 @@ export function SimulatorTransactionForm(props: SimulatorTransactionFormProps) {
             <SimulatorFormInput
               id="sim-transaction-amount-usd"
               type="text"
-              value={values.amount_usd ? formatApproximateUsd(Number(values.amount_usd)) : ""}
+              value={
+                values.amount_usd
+                  ? formatTransactionAmountUsd(Number(values.amount_usd), values.direction)
+                  : ""
+              }
               readOnly
               disabled
               placeholder="Calculated automatically"
@@ -749,13 +745,7 @@ export function SimulatorTransactionForm(props: SimulatorTransactionFormProps) {
               />
             </SimulatorFormField>
             <p className="mt-2 text-xs text-slate-500">
-              {p2pLookupLoading
-                ? "Looking up counterparty…"
-                : p2pLookupError
-                  ? p2pLookupError
-                  : values.counterparty_name
-                    ? `Resolved name: ${values.counterparty_name}`
-                    : "Description will resolve from the selected user automatically."}
+              {p2pLookupHelperText}
             </p>
           </div>
         ) : null}

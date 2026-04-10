@@ -47,7 +47,6 @@ import type {
   UserFinancialsRow,
   UserRow,
 } from "@/lib/types";
-import Image from "next/image";
 import Link from "next/link";
 import { QueryErrorBanner } from "@/components/query-error";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
@@ -55,7 +54,6 @@ import { UserProfileSkeleton } from "@/components/user-profile-skeleton";
 import { listInternalNotesForSimulatorUser } from "@/lib/services/internal-notes";
 import { TABLE_PY_INNER } from "@/lib/table-padding";
 import {
-  formatApproximateUsd,
   formatMaskedCardReference,
   getTransactionChronologyConflictIds,
   getTransactionDescriptionFromRow,
@@ -2386,7 +2384,7 @@ export default function UserProfilePage() {
                                 </p>
                                 <p className="mt-0.5 text-[11px] text-slate-500">
                                   {tx.amount_usd != null
-                                    ? `~${formatTransactionAmountUsd(tx.amount_usd, tx.direction, tx.status, { withSign: false })}`
+                                    ? formatTransactionAmountUsd(tx.amount_usd, tx.direction, tx.status)
                                     : "USD value unavailable"}
                                 </p>
                               </div>

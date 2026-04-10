@@ -1,41 +1,72 @@
-# Подключение Supabase
+# Supabase Setup
 
-## 1. Создай проект
+RiskOps Lab is `migrations-first`. Do not create product tables manually in Table Editor.
 
-1. Зайди на [supabase.com](https://supabase.com) и войди в аккаунт
-2. **New project** → укажи имя, пароль для БД, регион
-3. Дождись создания проекта
+## 1. Create or choose a project
 
-## 2. Получи ключи
+1. Create a Supabase project.
+2. Copy the project URL and anon key.
+3. Put them into `.env.local` and your deployment environment.
 
-В панели проекта: **Settings** → **API**:
-- **Project URL** — скопируй
-- **anon public** key — скопируй (под "Project API keys")
+## 2. Apply migrations
 
-## 3. Настрой переменные
+Use the Supabase CLI against the target project and apply everything in `supabase/migrations/`.
 
-Создай файл `.env.local` в корне проекта:
+Important migrations for public beta:
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://твой-проект.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=твой-anon-key
-```
+- `20260327231227_remote_schema.sql`
+- `20260407220000_user_related_crud.sql`
+- `20260409183000_public_beta_auth_provisioning.sql`
 
-## 4. Использование
+The public beta provisioning migration does three things:
 
-```ts
-import { supabase } from "@/lib/supabase";
+- normalizes the shared `public-beta` organization
+- installs the auth trigger that provisions `public.app_users`
+- backfills existing `auth.users` into `public.app_users`
 
-// Чтение
-const { data, error } = await supabase.from("users").select("*");
+## 3. Configure Auth
 
-// Вставка
-await supabase.from("users").insert({ email: "...", ... });
+In Supabase Auth settings, confirm:
 
-// Обновление
-await supabase.from("users").update({ status: "Active" }).eq("id", "u-1001");
-```
+- `Site URL` matches `NEXT_PUBLIC_SITE_URL`
+- redirect URLs include:
+  - `${NEXT_PUBLIC_SITE_URL}/auth/callback`
+  - `${NEXT_PUBLIC_SITE_URL}/reset-password`
+  - local equivalents for `http://localhost:3000`
+- email confirmations are enabled
+- Google OAuth is enabled
+- Turnstile captcha is enabled
 
-## 5. Создание таблиц
+For local CLI-driven stacks, `supabase/config.toml` expects:
 
-В Supabase: **Table Editor** → **New table** — создай нужные таблицы (users, alerts и т.д.).
+- `SUPABASE_AUTH_TURNSTILE_SECRET`
+
+The app itself expects:
+
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+
+## 4. Verify provisioning
+
+After signup, confirm the new auth user has a matching row in `public.app_users` with:
+
+- `role = trainee`
+- `organization_id = public-beta org id`
+- `is_active = true`
+
+If an older auth account existed without an `app_users` row, re-apply migrations or manually re-run the provisioning function from the migration path rather than inserting by hand.
+
+## 5. Seed and access model
+
+- Public beta users share one `public-beta` organization.
+- Existing invite or org-code flows are not part of the public beta contract.
+- Product data must remain synthetic-only.
+
+## 6. Pre-launch checks
+
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- auth callback works on the real public domain
+- forgot/reset password works
+- Google OAuth round-trip works
+- support email and legal pages show the public beta messaging

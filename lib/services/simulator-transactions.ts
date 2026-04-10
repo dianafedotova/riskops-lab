@@ -540,7 +540,20 @@ async function getNextTopTransactionSortOrder(
   supabase: SupabaseClient,
   userId: string
 ): Promise<{ value: number; error: string | null }> {
-  const transactionsTable: any = supabase.from("transactions");
+  type TransactionSortOrderLookup = {
+    select?: (columns: string) => {
+      eq: (column: string, value: string) => {
+        order: (column: string, options: { ascending: boolean }) => {
+          limit: (count: number) => Promise<{
+            data: Array<{ sort_order: number | string | null }> | null;
+            error: { message: string } | null;
+          }>;
+        };
+      };
+    };
+  };
+
+  const transactionsTable = supabase.from("transactions") as unknown as TransactionSortOrderLookup;
   if (typeof transactionsTable.select !== "function") {
     return { value: 0, error: null };
   }

@@ -365,14 +365,6 @@ export function calculateAmountUsd(amount: number | null | undefined, currency: 
   return null;
 }
 
-export function formatApproximateUsd(amountUsd: number | null | undefined): string {
-  if (amountUsd == null || !Number.isFinite(amountUsd)) return "—";
-  return `${amountUsd.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} USD`;
-}
-
 export function formatMaskedCardReference(value: string | null | undefined): string | null {
   const digits = (value ?? "").replace(/\D/g, "");
   if (!digits) return null;

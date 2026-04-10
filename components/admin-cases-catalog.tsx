@@ -126,13 +126,7 @@ export function AdminCasesCatalog({
 
   const [traineeLabel, setTraineeLabel] = useState<string | null>(null);
   const [simLabel, setSimLabel] = useState<string | null>(null);
-
-  const [qInput, setQInput] = useState(urlState.q);
   const qDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    setQInput(urlState.q);
-  }, [urlState.q]);
 
   const navigateReplace = useCallback(
     (next: AdminCasesUrlState) => {
@@ -157,11 +151,7 @@ export function AdminCasesCatalog({
   );
 
   useEffect(() => {
-    if (!superViewer || !canViewAdminPanel || !appUser) {
-      setOrganizations([]);
-      setOrgLoadError(null);
-      return;
-    }
+    if (!superViewer || !canViewAdminPanel || !appUser) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
@@ -176,10 +166,7 @@ export function AdminCasesCatalog({
   }, [superViewer, canViewAdminPanel, appUser]);
 
   useEffect(() => {
-    if (!urlState.trainee) {
-      setTraineeLabel(null);
-      return;
-    }
+    if (!urlState.trainee) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
@@ -199,10 +186,7 @@ export function AdminCasesCatalog({
   }, [urlState.trainee]);
 
   useEffect(() => {
-    if (!urlState.sim) {
-      setSimLabel(null);
-      return;
-    }
+    if (!urlState.sim) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
@@ -257,12 +241,7 @@ export function AdminCasesCatalog({
   }, [urlState, superViewer, rpcPhase]);
 
   useEffect(() => {
-    if (!canViewAdminPanel) {
-      setRows([]);
-      setTotalCount(0);
-      setLoading(false);
-      return;
-    }
+    if (!canViewAdminPanel) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -289,9 +268,11 @@ export function AdminCasesCatalog({
     () => organizations.map((o) => ({ value: o.id, label: o.name })),
     [organizations]
   );
+  const visibleOrgLoadError = superViewer && canViewAdminPanel && appUser ? orgLoadError : null;
+  const selectedTraineeLabel = urlState.trainee ? traineeLabel : null;
+  const selectedSimLabel = urlState.sim ? simLabel : null;
 
   const onSearchChange = (value: string) => {
-    setQInput(value);
     if (qDebounceRef.current) clearTimeout(qDebounceRef.current);
     qDebounceRef.current = setTimeout(() => {
       navigateFilters({ q: value.trim() });
@@ -396,7 +377,7 @@ export function AdminCasesCatalog({
         ) : null}
 
         {error ? <QueryErrorBanner message={error} onRetry={() => navigateReplace({ ...urlState })} /> : null}
-        {orgLoadError ? <p className="text-sm text-rose-600">{orgLoadError}</p> : null}
+        {visibleOrgLoadError ? <p className="text-sm text-rose-600">{visibleOrgLoadError}</p> : null}
 
         <div className="workspace-shell space-y-4 p-4 sm:p-5">
           <div className="grid gap-4 lg:grid-cols-12">
@@ -404,13 +385,14 @@ export function AdminCasesCatalog({
               <label htmlFor="admin-cases-q" className="mb-1 block pl-3 text-sm font-medium text-slate-600">
                 Search
               </label>
-              <input
-                id="admin-cases-q"
-                type="search"
-                value={qInput}
-                onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="Trainee name, email, thread id, alert id, simulator user…"
-                className="dark-input h-10 w-full rounded-[0.7rem] px-4 text-sm"
+                <input
+                  key={`admin-cases-q-${urlState.q}`}
+                  id="admin-cases-q"
+                  type="search"
+                  defaultValue={urlState.q}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  placeholder="Trainee name, email, thread id, alert id, simulator user…"
+                  className="dark-input h-10 w-full rounded-[0.7rem] px-4 text-sm"
               />
             </div>
             <div className="flex flex-wrap gap-3 lg:col-span-7 lg:justify-end">
@@ -511,7 +493,7 @@ export function AdminCasesCatalog({
                 disabled={superViewer && !urlState.org}
                 placeholder={superViewer && !urlState.org ? "Pick an organization first" : "Search trainees…"}
                 selectedId={urlState.trainee}
-                selectedLabel={traineeLabel}
+                selectedLabel={selectedTraineeLabel}
                 search={searchTrainees}
                 onClear={() => navigateFilters({ trainee: null })}
                 onSelect={(opt) => navigateFilters({ trainee: opt.id })}
@@ -522,7 +504,7 @@ export function AdminCasesCatalog({
               <AdminEntityAsyncPicker
                 ariaLabel="Filter by simulator user"
                 selectedId={urlState.sim}
-                selectedLabel={simLabel}
+                selectedLabel={selectedSimLabel}
                 search={searchSimUsers}
                 onClear={() => navigateFilters({ sim: null })}
                 onSelect={(opt) => navigateFilters({ sim: opt.id })}

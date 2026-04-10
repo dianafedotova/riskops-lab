@@ -1,8 +1,17 @@
 "use client";
 
 import { FilterSelect } from "@/components/filter-select";
+import { PublicBetaNote } from "@/components/public-beta-note";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
+import { captureSentryMessage } from "@/lib/sentry-capture";
+import {
+  getSupportEmail,
+  getSupportMailtoHref,
+  getTurnstileSiteKey,
+  isTurnstileEnabled,
+} from "@/lib/public-config";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,14 +22,18 @@ function NeedAppUserBanner() {
   if (searchParams.get("need_app_user") !== "1") return null;
   return (
     <p className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--accent-stone-500)]">
-      Your account is not registered in the simulator yet. Complete sign-up below so we can create your
-      workspace profile.
+      Legacy account detected. Start a fresh beta signup below or contact
+      support if you expected an existing workspace profile.
     </p>
   );
 }
 
 export default function SignupPage() {
   const router = useRouter();
+  const supportEmail = getSupportEmail();
+  const turnstileSiteKey = getTurnstileSiteKey();
+  const turnstileEnabled = isTurnstileEnabled();
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [countryCode, setCountryCode] = useState("");
@@ -31,29 +44,54 @@ export default function SignupPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const countrySelectOptions = useMemo(
-    () => [{ value: "", label: "Select country" }, ...COUNTRY_OPTIONS.map((country) => ({ value: country.code, label: country.name }))],
+    () => [
+      { value: "", label: "Select country" },
+      ...COUNTRY_OPTIONS.map((country) => ({ value: country.code, label: country.name })),
+    ],
     []
   );
 
   const countryName = useMemo(
-    () => COUNTRY_OPTIONS.find((c) => c.code === countryCode)?.name ?? "",
+    () => COUNTRY_OPTIONS.find((country) => country.code === countryCode)?.name ?? "",
     [countryCode]
   );
 
   const onGoogle = async () => {
     setMessage(null);
     setSuccessMessage(null);
+
+    if (turnstileEnabled && !captchaToken) {
+      setMessage("Complete the captcha before continuing with Google.");
+      return;
+    }
+
     setGoogleLoading(true);
     const supabase = createClient();
     const redirectTo = getAuthRedirectUrl("/auth/callback");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: redirectTo ? { redirectTo } : undefined,
+      options: {
+        ...(redirectTo ? { redirectTo } : {}),
+        ...(captchaToken ? { captchaToken } : {}),
+      },
     });
+
     if (error) {
       setMessage(error.message);
+      captureSentryMessage("Google signup redirect failed", {
+        level: "warning",
+        type: "signup_google_failed",
+        pathname: "/signup",
+        tags: {
+          source: "client",
+        },
+        extra: {
+          detail: error.message,
+        },
+      });
       setGoogleLoading(false);
     }
   };
@@ -62,6 +100,7 @@ export default function SignupPage() {
     e.preventDefault();
     setMessage(null);
     setSuccessMessage(null);
+
     if (!firstName.trim() || !lastName.trim()) {
       setMessage("First name and last name are required.");
       return;
@@ -82,6 +121,10 @@ export default function SignupPage() {
       setMessage("Passwords do not match.");
       return;
     }
+    if (turnstileEnabled && !captchaToken) {
+      setMessage("Complete the captcha before creating a beta account.");
+      return;
+    }
 
     setLoading(true);
     const supabase = createClient();
@@ -95,10 +138,24 @@ export default function SignupPage() {
           country_code: countryCode,
           country_name: countryName,
         },
+        ...(captchaToken ? { captchaToken } : {}),
       },
     });
+
     if (error) {
       setMessage(error.message);
+      captureSentryMessage("Public beta signup failed", {
+        level: "warning",
+        type: "signup_failed",
+        pathname: "/signup",
+        tags: {
+          source: "client",
+        },
+        extra: {
+          detail: error.message,
+          countryCode,
+        },
+      });
       setLoading(false);
       return;
     }
@@ -121,6 +178,11 @@ export default function SignupPage() {
         <p className="rounded-[1.2rem] border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           {successMessage}
         </p>
+        <p className="text-sm leading-6 text-[var(--accent-stone-500)]">
+          We provision every confirmed beta user as a trainee in the shared
+          public beta workspace after auth completes.
+        </p>
+        <PublicBetaNote compact />
         <div className="space-y-2">
           <Link
             href="/sign-in"
@@ -144,6 +206,11 @@ export default function SignupPage() {
           </Link>
         </p>
       </div>
+
+      <p className="text-sm leading-6 text-[var(--accent-stone-500)]">
+        Open signup is enabled for the public beta. New accounts join the
+        shared trainee workspace and must use synthetic data only.
+      </p>
 
       <Suspense fallback={null}>
         <NeedAppUserBanner />
@@ -196,7 +263,7 @@ export default function SignupPage() {
           <div className="mt-1">
             <FilterSelect
               ariaLabel="Country"
-            value={countryCode}
+              value={countryCode}
               onChange={setCountryCode}
               options={countrySelectOptions}
               className="h-10 w-full px-3 text-sm"
@@ -236,6 +303,9 @@ export default function SignupPage() {
             autoComplete="new-password"
           />
         </label>
+        {turnstileEnabled ? (
+          <TurnstileWidget siteKey={turnstileSiteKey} onTokenChange={setCaptchaToken} />
+        ) : null}
         <button
           type="submit"
           disabled={loading || googleLoading}
@@ -244,7 +314,18 @@ export default function SignupPage() {
           {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
+
+      <PublicBetaNote compact />
+      <p className="text-xs leading-5 text-[var(--accent-stone-500)]">
+        Need help with signup, confirmation, or provisioning? Contact{" "}
+        <Link
+          href={getSupportMailtoHref("RiskOps Lab public beta signup help")}
+          className="font-medium underline"
+        >
+          {supportEmail}
+        </Link>
+        .
+      </p>
     </section>
   );
 }
-

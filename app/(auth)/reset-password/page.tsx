@@ -1,5 +1,7 @@
 "use client";
 
+import { PublicBetaNote } from "@/components/public-beta-note";
+import { captureSentryMessage } from "@/lib/sentry-capture";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,6 +18,7 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setMessage(null);
     setSuccess(null);
+
     if (!newPassword) {
       setMessage("New password is required.");
       return;
@@ -30,9 +33,21 @@ export default function ResetPasswordPage() {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) {
       setMessage(error.message);
+      captureSentryMessage("Password update failed", {
+        level: "warning",
+        type: "reset_password_failed",
+        pathname: "/reset-password",
+        tags: {
+          source: "client",
+        },
+        extra: {
+          detail: error.message,
+        },
+      });
       setLoading(false);
       return;
     }
+
     setSuccess("Password updated successfully. Redirecting to sign in...");
     setLoading(false);
     window.setTimeout(() => {
@@ -44,6 +59,10 @@ export default function ResetPasswordPage() {
   return (
     <section className="mx-auto max-w-md space-y-4 rounded border border-[var(--border-app)] bg-[var(--surface-workspace)] p-6 text-[var(--app-shell-bg)]">
       <h1 className="text-lg font-semibold">Reset password</h1>
+      <p className="text-sm leading-6 text-[var(--accent-stone-500)]">
+        Choose a new password for your public beta account, then sign back in
+        to continue your training workspace.
+      </p>
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
       {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
       <form onSubmit={onSubmit} className="space-y-3">
@@ -77,7 +96,7 @@ export default function ResetPasswordPage() {
           {loading ? "Updating..." : "Update password"}
         </button>
       </form>
+      <PublicBetaNote compact />
     </section>
   );
 }
-

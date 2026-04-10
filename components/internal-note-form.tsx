@@ -18,7 +18,7 @@ import {
   INTERNAL_NOTE_SIGNATURE_OPTIONS,
 } from "@/lib/internal-note-signatures";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const SIGNATURE_SELECT_OPTIONS = INTERNAL_NOTE_SIGNATURE_OPTIONS.map((value) => ({ value, label: value }));
 
@@ -52,18 +52,39 @@ export function InternalNoteForm({
   onDeleted,
   onCancel,
 }: InternalNoteFormProps) {
+  const formStateKey = `${mode}:${userId}:${initialValue?.id ?? "new"}:${initialValue?.updated_at ?? initialValue?.created_at ?? ""}`;
+
+  return (
+    <InternalNoteFormBody
+      key={formStateKey}
+      viewer={viewer}
+      mode={mode}
+      userId={userId}
+      initialValue={initialValue}
+      submitLabel={submitLabel}
+      onSaved={onSaved}
+      onDeleted={onDeleted}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function InternalNoteFormBody({
+  viewer,
+  mode,
+  userId,
+  initialValue,
+  submitLabel,
+  onSaved,
+  onDeleted,
+  onCancel,
+}: InternalNoteFormProps) {
   const [noteText, setNoteText] = useState(initialValue?.note_text ?? "");
   const [noteDate, setNoteDate] = useState(toDateInput(initialValue?.created_at) || new Date().toISOString().slice(0, 10));
   const [signature, setSignature] = useState(() => coerceInternalNoteSignatureLabel(initialValue?.created_by));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setNoteText(initialValue?.note_text ?? "");
-    setNoteDate(toDateInput(initialValue?.created_at) || new Date().toISOString().slice(0, 10));
-    setSignature(coerceInternalNoteSignatureLabel(initialValue?.created_by));
-  }, [initialValue]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

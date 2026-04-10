@@ -43,7 +43,7 @@ describe("simulator user events", () => {
     });
 
     expect(result.error).toBe(
-      "User is required. Event time must be a valid date/time. Event type must be one of: sign_up, sign_in, open_app, logout, password_reset, added_sof, added_poa, added_poi, changed_phone, changed_email, changed_address, changed_password, changed_device. IP address must be a valid IPv4 or IPv6 value."
+      "User is required. Event time must be a valid date/time. Event type must be one of: sign_up, sign_in, open_app, logout, password_reset, added_sof, added_poa, added_poi, changed_phone, changed_email, changed_address, changed_password, changed_device. IP address must be a masked IPv4 value like 144.***.***.87 or a valid IPv6 value."
     );
   });
 

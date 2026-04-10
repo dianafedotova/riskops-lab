@@ -12,7 +12,7 @@ export default async function ProfilePage() {
   const { authUser, appUser, error } = await getCurrentAppUser(supabase);
   if (!authUser) redirect("/sign-in");
   if (!error && !appUser) {
-    redirect("/signup?need_app_user=1");
+    redirect("/sign-in?reason=provisioning");
   }
   const profileHeading = appUserProfileHeading(appUser);
 

@@ -164,8 +164,9 @@ export function SimulatorCommentsPanel({
   traineeSubmittedSummaryLayout = "default",
   showSubmittedSummary = true,
   showQaReplyAction = true,
-  showReviewerFeedbackInThread = false,
+  showReviewerFeedbackInThread: _showReviewerFeedbackInThread = false,
 }: Props) {
+  void _showReviewerFeedbackInThread;
   const { appUser, loading: sessionLoading } = useCurrentUser();
   const [adminMode, setAdminMode] = useState<"reply" | "private">(adminModeOverride ?? "reply");
   const hasPrivateTarget = Boolean(privateAlertInternalId || privateSimulatorUserId);
@@ -1395,7 +1396,7 @@ function SubmittedThreadSummary({
   authorLabel,
   showAuthor,
   traineeLayout,
-  headerOnly = false,
+  headerOnly: _headerOnly = false,
 }: {
   submission: ReviewSubmissionRow;
   authorLabel: string;
@@ -1403,6 +1404,7 @@ function SubmittedThreadSummary({
   traineeLayout: "default" | "alert";
   headerOnly?: boolean;
 }) {
+  void _headerOnly;
   const formatStatusValue = (value: string) =>
     value
       .replaceAll("_", " ")

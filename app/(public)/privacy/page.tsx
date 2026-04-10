@@ -1,3 +1,5 @@
+import { PublicBetaNote } from "@/components/public-beta-note";
+
 export default function PrivacyPage() {
   return (
     <section className="space-y-5 rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-panel)] p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
@@ -14,29 +16,26 @@ export default function PrivacyPage() {
 
       <div className="space-y-4 text-sm leading-6 text-[var(--accent-stone-500)]">
         <p>
-          RiskOps Lab uses synthetic data for training and simulation. No real
-          personal or customer information is required for standard use.
+          RiskOps Lab public beta is built around synthetic data for training
+          and simulation. Standard use should not require real personal or
+          customer information.
         </p>
         <p>
-          Any locally entered notes or temporary simulator inputs should be
-          treated as non-production artifacts and handled under your internal
-          training policies.
+          Any notes, uploads, or temporary inputs you add inside the beta
+          should be treated as training artifacts only.
         </p>
         <p>
-          This UI does not currently implement production-grade data retention,
-          encryption, consent management, or audit controls.
+          We use the product to improve the beta, operate authentication, and
+          review reported issues. Do not rely on the beta as a system of record
+          or a place to store sensitive materials.
         </p>
         <p>
-          Do not input sensitive personal data, credentials, or real case
-          materials into this simulator.
+          Never input real personal data, credentials, production secrets, or
+          live case materials into RiskOps Lab.
         </p>
       </div>
 
-      <div className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--accent-stone-500)]">
-        Privacy notice: this simulator is for internal learning and
-        demonstration purposes only.
-      </div>
+      <PublicBetaNote title="Beta privacy baseline" />
     </section>
   );
 }
-

@@ -1,21 +1,26 @@
 import type { Metadata, Viewport } from "next";
 import { CurrentUserProvider } from "@/components/current-user-provider";
 import { getCurrentAppUser } from "@/lib/auth/current-app-user";
+import { PUBLIC_BETA_DESCRIPTION, PUBLIC_BETA_NAME } from "@/lib/public-config";
 import { getSiteOrigin } from "@/lib/site-url";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { SUSE, SUSE_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const suseSans = SUSE({
+const suseSans = localFont({
+  src: "./fonts/suse-latin-wght-normal.woff2",
   variable: "--font-suse-sans",
-  subsets: ["latin"],
+  display: "swap",
+  weight: "100 900",
 });
 
-const suseMono = SUSE_Mono({
+const suseMono = localFont({
+  src: "./fonts/suse-mono-latin-wght-normal.woff2",
   variable: "--font-suse-mono",
-  subsets: ["latin"],
+  display: "swap",
+  weight: "100 800",
 });
 
 const metadataBase = (() => {
@@ -28,8 +33,24 @@ const metadataBase = (() => {
 
 export const metadata: Metadata = {
   metadataBase,
-  title: "RiskOps Lab",
-  description: "Fraud and AML risk review simulator",
+  title: {
+    default: PUBLIC_BETA_NAME,
+    template: `%s | ${PUBLIC_BETA_NAME}`,
+  },
+  description: PUBLIC_BETA_DESCRIPTION,
+  applicationName: PUBLIC_BETA_NAME,
+  openGraph: {
+    type: "website",
+    title: PUBLIC_BETA_NAME,
+    description: PUBLIC_BETA_DESCRIPTION,
+    siteName: PUBLIC_BETA_NAME,
+    url: metadataBase,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: PUBLIC_BETA_NAME,
+    description: PUBLIC_BETA_DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {

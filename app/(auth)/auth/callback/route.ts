@@ -1,4 +1,5 @@
 import { getCurrentAppUser } from "@/lib/auth/current-app-user";
+import { captureSentryMessage } from "@/lib/sentry-capture";
 import { recordAppUserActivity } from "@/lib/services/app-user-activity";
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
@@ -33,10 +34,26 @@ export async function GET(request: NextRequest) {
   };
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    captureSentryMessage("OAuth callback failed because Supabase env vars are missing", {
+      level: "error",
+      type: "oauth_callback_config_missing",
+      pathname: request.nextUrl.pathname,
+      tags: {
+        source: "server",
+      },
+    });
     return redirectSignIn({ oauth: "config" });
   }
 
   if (!code) {
+    captureSentryMessage("OAuth callback reached without authorization code", {
+      level: "warning",
+      type: "oauth_callback_missing_code",
+      pathname: request.nextUrl.pathname,
+      tags: {
+        source: "server",
+      },
+    });
     return redirectSignIn({ oauth: "missing_code" });
   }
 
@@ -62,6 +79,17 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     const lower = error.message.toLowerCase();
+    captureSentryMessage("OAuth callback could not exchange code for session", {
+      level: "warning",
+      type: "oauth_callback_exchange_failed",
+      pathname: request.nextUrl.pathname,
+      tags: {
+        source: "server",
+      },
+      extra: {
+        detail: error.message,
+      },
+    });
     if (lower.includes("pkce")) {
       return redirectSignIn({ oauth: "pkce" });
     }
@@ -74,11 +102,30 @@ export async function GET(request: NextRequest) {
   const { authUser, appUser: appUserRow, error: appUserErr } = await getCurrentAppUser(supabase);
 
   if (!authUser) {
+    captureSentryMessage("OAuth callback finished without authenticated user session", {
+      level: "warning",
+      type: "oauth_callback_no_session",
+      pathname: request.nextUrl.pathname,
+      tags: {
+        source: "server",
+      },
+    });
     return redirectSignIn({ oauth: "no_session" });
   }
 
   if (appUserErr) {
     await supabase.auth.signOut();
+    captureSentryMessage("OAuth callback could not load app_users profile", {
+      level: "error",
+      type: "oauth_callback_profile_lookup_failed",
+      pathname: request.nextUrl.pathname,
+      tags: {
+        source: "server",
+      },
+      extra: {
+        detail: appUserErr.message,
+      },
+    });
     const signInUrl = request.nextUrl.clone();
     signInUrl.pathname = "/sign-in";
     signInUrl.search = "";
@@ -93,11 +140,22 @@ export async function GET(request: NextRequest) {
 
   if (!appUserRow) {
     await supabase.auth.signOut();
-    const signupUrl = request.nextUrl.clone();
-    signupUrl.pathname = "/signup";
-    signupUrl.search = "";
-    signupUrl.searchParams.set("need_app_user", "1");
-    const signupResponse = NextResponse.redirect(signupUrl);
+    captureSentryMessage("OAuth callback finished without app_users profile", {
+      level: "warning",
+      type: "oauth_callback_profile_missing",
+      pathname: request.nextUrl.pathname,
+      tags: {
+        source: "server",
+      },
+      extra: {
+        authUserId: authUser.id,
+      },
+    });
+    const signInUrl = request.nextUrl.clone();
+    signInUrl.pathname = "/sign-in";
+    signInUrl.search = "";
+    signInUrl.searchParams.set("reason", "provisioning");
+    const signupResponse = NextResponse.redirect(signInUrl);
     for (const c of response.headers.getSetCookie()) {
       signupResponse.headers.append("Set-Cookie", c);
     }
@@ -106,6 +164,17 @@ export async function GET(request: NextRequest) {
 
   if (appUserRow.is_active === false) {
     await supabase.auth.signOut();
+    captureSentryMessage("OAuth callback resolved to inactive app user", {
+      level: "warning",
+      type: "oauth_callback_inactive_user",
+      pathname: request.nextUrl.pathname,
+      tags: {
+        source: "server",
+      },
+      extra: {
+        appUserId: appUserRow.id,
+      },
+    });
     const inactiveUrl = request.nextUrl.clone();
     inactiveUrl.pathname = "/sign-in";
     inactiveUrl.search = "";

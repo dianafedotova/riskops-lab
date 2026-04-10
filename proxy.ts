@@ -82,9 +82,10 @@ export async function proxy(request: NextRequest) {
         if (path === "/signup") {
           return supabaseResponse;
         }
-        const signupUrl = new URL("/signup", request.url);
-        signupUrl.searchParams.set("need_app_user", "1");
-        const redirectRes = NextResponse.redirect(signupUrl);
+        await supabase.auth.signOut();
+        const provisioningUrl = new URL("/sign-in", request.url);
+        provisioningUrl.searchParams.set("reason", "provisioning");
+        const redirectRes = NextResponse.redirect(provisioningUrl);
         applyCookies(supabaseResponse, redirectRes);
         return redirectRes;
       }
@@ -130,9 +131,10 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!appUser) {
-    const signupUrl = new URL("/signup", request.url);
-    signupUrl.searchParams.set("need_app_user", "1");
-    const redirectRes = NextResponse.redirect(signupUrl);
+    await supabase.auth.signOut();
+    const provisioningUrl = new URL("/sign-in", request.url);
+    provisioningUrl.searchParams.set("reason", "provisioning");
+    const redirectRes = NextResponse.redirect(provisioningUrl);
     applyCookies(supabaseResponse, redirectRes);
     return redirectRes;
   }
@@ -155,6 +157,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

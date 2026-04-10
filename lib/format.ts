@@ -89,8 +89,9 @@ export function formatTransactionAmount(
   amount: number | null,
   currency: string | null,
   direction: string | null,
-  status?: string | null
+  _status?: string | null
 ): string {
+  void _status;
   if (amount == null || Number.isNaN(amount)) return "—";
   const cc = currency ?? "USD";
   const value = Math.abs(amount).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -102,9 +103,10 @@ export function formatTransactionAmount(
 export function formatTransactionAmountUsd(
   amountUsd: number | null,
   direction: string | null,
-  status?: string | null,
+  _status?: string | null,
   options?: { withSign?: boolean }
 ): string {
+  void _status;
   if (amountUsd == null || Number.isNaN(amountUsd)) return "—";
   const value = Math.abs(amountUsd).toLocaleString("en-US", {
     minimumFractionDigits: 2,

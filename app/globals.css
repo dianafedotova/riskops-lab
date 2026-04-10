@@ -86,7 +86,7 @@ html {
 body {
   background: linear-gradient(180deg, var(--background) 0%, var(--background) 100%);
   color: var(--foreground);
-  font-family: var(--font-suse-sans), "Inter", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-suse-sans), ui-sans-serif, system-ui, sans-serif;
   line-height: 1.5;
 }
 

@@ -1,36 +1,107 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RiskOps Lab
 
-## Getting Started
+Public beta training workspace for fraud and AML investigation practice. The product is intentionally `synthetic-only`: do not enter real customer data, credentials, secrets, or live case materials.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 App Router
+- React 19
+- Supabase Auth + Postgres
+- Tailwind CSS 4
+- Vitest
+- Vercel Analytics / Speed Insights
+
+## Local development
+
+1. Copy `.env.example` to `.env.local`.
+2. Fill in at least:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SITE_URL`
+   - `NEXT_PUBLIC_SUPPORT_EMAIL`
+3. Run `npm install`.
+4. Run `npm run dev`.
+
+## Required production env
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SITE_URL`
+- `NEXT_PUBLIC_SUPPORT_EMAIL`
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+- `SUPABASE_AUTH_TURNSTILE_SECRET`
+- `NEXT_PUBLIC_SENTRY_DSN`
+- `SENTRY_DSN` (optional server / edge override)
+- `SENTRY_AUTH_TOKEN`
+- `SENTRY_ORG`
+- `SENTRY_PROJECT`
+- `SENTRY_ENVIRONMENT` (optional)
+
+## Public beta auth contract
+
+- Open signup is enabled.
+- Email/password and Google OAuth are supported.
+- Email confirmation must stay enabled.
+- New `auth.users` rows are auto-provisioned into `public.app_users`.
+- Default role is `trainee`.
+- Default organization is the shared `public-beta` organization.
+- `need_app_user` is legacy-only and should not be part of the normal signup flow.
+
+## Database workflow
+
+- Treat `supabase/migrations/` as the source of truth.
+- Apply migrations before testing auth or seeded training scenarios.
+- The migration `20260409183000_public_beta_auth_provisioning.sql` seeds or normalizes the shared public beta organization and installs the auth trigger that provisions `public.app_users`.
+
+## Quality gates
+
+Run these before merging or deploying:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run lint
+npm test
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`main` should stay green on all three.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment sequence
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Confirm production env vars are present in Vercel and Supabase.
+2. Apply all pending Supabase migrations.
+3. Verify Supabase Auth settings:
+   - Site URL matches `NEXT_PUBLIC_SITE_URL`
+   - Redirect URLs include `/auth/callback` and `/reset-password`
+   - Email confirmations enabled
+   - Turnstile enabled
+   - Google provider enabled
+4. Deploy the Next.js app.
+5. Run the smoke checklist below.
 
-## Learn More
+## Smoke checklist
 
-To learn more about Next.js, take a look at the following resources:
+- Public landing page loads with updated beta/legal copy.
+- Signup works with email/password.
+- Email confirmation returns to the app correctly.
+- Google OAuth signup/sign-in returns to `/auth/callback` and lands in `/dashboard`.
+- Forgot-password sends a reset link.
+- Reset-password flow returns to sign-in successfully.
+- A brand-new auth user gets a `public.app_users` row with role `trainee`.
+- Protected routes redirect guests to `/sign-in`.
+- Error pages, `robots.txt`, and `sitemap.xml` resolve.
+- Monitoring receives at least one forced test event before public launch.
+- Sentry receives one client exception, one server exception, and one replay-linked event before public launch.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Rollback
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Disable public marketing or signup entry points if the incident affects auth.
+2. Roll back the Vercel deployment if the issue is app-only.
+3. If the issue is schema-related, apply a compensating migration instead of editing production tables manually.
+4. Re-run the smoke checklist after recovery.
 
-## Deploy on Vercel
+## Support and beta operations
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Support contact is driven by `NEXT_PUBLIC_SUPPORT_EMAIL`.
+- Funnel beta issues to one owned inbox before launch.
+- Keep a short known-issues list for testers.
+- Treat Sentry alerts as part of the release gate, not as optional cleanup.

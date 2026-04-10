@@ -1,3 +1,5 @@
+import { PublicBetaNote } from "@/components/public-beta-note";
+
 export default function GuidePage() {
   return (
     <section className="space-y-5 rounded-[1.2rem] bg-[var(--surface-panel)] p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
@@ -53,18 +55,14 @@ export default function GuidePage() {
 
       <div className="rounded-[1.2rem] bg-[var(--surface-main)] p-4 text-sm leading-6 text-[var(--accent-stone-500)] shadow-sm">
         <p>
-          <span className="font-semibold">Limitations and assumptions:</span>{" "}
-          this simulator is UI-focused and currently does not include backend
-          logic, audit trails, model scoring, or regulator-specific policy
-          implementation.
+          <span className="font-semibold">Beta assumptions:</span> this product
+          is designed for training loops, not live adjudication. It supports
+          synthetic review practice, shared beta accounts, and manual feedback
+          on analyst reasoning.
         </p>
       </div>
 
-      <div className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--accent-stone-500)] shadow-sm">
-        Training-only disclaimer: RiskOps Lab is for learning and demonstration,
-        not for real customer decisions.
-      </div>
+      <PublicBetaNote title="Synthetic-only rule" />
     </section>
   );
 }
-

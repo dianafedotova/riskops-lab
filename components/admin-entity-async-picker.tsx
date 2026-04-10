@@ -34,6 +34,7 @@ export function AdminEntityAsyncPicker({
   const [options, setOptions] = useState<AdminEntitySearchOption[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputValue = selectedId ? (selectedLabel ?? selectedId) : input;
 
   const runSearch = useCallback(
     async (q: string) => {
@@ -52,21 +53,11 @@ export function AdminEntityAsyncPicker({
   );
 
   useEffect(() => {
-    if (selectedId) {
-      setInput(selectedLabel ?? "");
-    }
-  }, [selectedId, selectedLabel]);
-
-  useEffect(() => {
     if (!open || selectedId) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = input.trim();
-    if (!q) {
-      setOptions([]);
-      setSearchError(null);
-      return;
-    }
+    if (!q) return;
 
     debounceRef.current = setTimeout(() => {
       void runSearch(q);
@@ -98,15 +89,22 @@ export function AdminEntityAsyncPicker({
       <div className="flex gap-1">
         <input
           type="text"
+          role="combobox"
           aria-label={ariaLabel}
+          aria-haspopup="listbox"
           aria-expanded={showList}
           aria-controls={showList ? listId : undefined}
           aria-autocomplete="list"
           disabled={disabled}
-          value={selectedId ? (selectedLabel ?? selectedId) : input}
+          value={inputValue}
           onChange={(e) => {
             if (selectedId) return;
-            setInput(e.target.value);
+            const nextValue = e.target.value;
+            setInput(nextValue);
+            if (!nextValue.trim()) {
+              setOptions([]);
+              setSearchError(null);
+            }
             setOpen(true);
           }}
           onFocus={() => {
@@ -143,9 +141,11 @@ export function AdminEntityAsyncPicker({
             <li className="px-3 py-2 text-sm text-slate-500">No matches</li>
           ) : (
             options.map((opt) => (
-              <li key={opt.id} role="option">
+              <li key={opt.id}>
                 <button
                   type="button"
+                  role="option"
+                  aria-selected={false}
                   className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
                   onClick={() => {
                     onSelect(opt);

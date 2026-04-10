@@ -27,11 +27,12 @@ function getSafeImageExt(fileName: string, mimeType: string | undefined | null):
 export function SimulatorUserSelfieUploader({
   canEdit,
   displayName,
-  selfiePath,
+  selfiePath: _selfiePath,
   selfieUrl,
   userId,
   onUpdated,
 }: SimulatorUserSelfieUploaderProps) {
+  void _selfiePath;
   const inputId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

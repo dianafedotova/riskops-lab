@@ -2,6 +2,7 @@
 
 import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
+import { captureSentryMessage } from "@/lib/sentry-capture";
 import { recordAppUserActivity } from "@/lib/services/app-user-activity";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
@@ -30,7 +31,7 @@ function getInitialOauthMessage(
     return "Sign-in is not configured (missing Supabase environment variables on the server).";
   }
   if (oauthFlag === "no_session" || oauthFlag === "missing_code") {
-    return "Sign-in did not finish. Please try “Continue with Google” again.";
+    return "Sign-in did not finish. Please try Continue with Google again.";
   }
   return null;
 }
@@ -39,7 +40,9 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "";
-  const inactiveReason = searchParams.get("reason") === "inactive";
+  const authReason = searchParams.get("reason");
+  const inactiveReason = authReason === "inactive";
+  const provisioningReason = authReason === "provisioning";
   const oauthCode = searchParams.get("code");
   const authType = searchParams.get("type");
   const oauthFlag = searchParams.get("oauth");
@@ -62,18 +65,17 @@ export function LoginForm() {
     params.delete("oauth");
     params.delete("message");
     router.replace(`/sign-in${params.toString() ? `?${params.toString()}` : ""}`);
-  }, [oauthFlag, oauthErrMessage, router, searchParams]);
+  }, [oauthFlag, router, searchParams]);
 
   useEffect(() => {
     if (!oauthCode || handledCodeRef.current) return;
     handledCodeRef.current = true;
     let cancelled = false;
+
     (async () => {
       setMessage(null);
       setOauthLoading(true);
 
-      // Email confirmation / recovery links can arrive with query params
-      // that are not OAuth PKCE callbacks. Keep UX smooth and avoid false errors.
       if (authType === "signup") {
         if (!cancelled) {
           setOauthLoading(false);
@@ -99,56 +101,104 @@ export function LoginForm() {
             router.replace(`/sign-in${params.toString() ? `?${params.toString()}` : ""}`);
           } else {
             setMessage(toFriendlyAuthError(error.message));
+            captureSentryMessage("Client OAuth code exchange failed", {
+              level: "warning",
+              type: "oauth_exchange_failed",
+              pathname: "/sign-in",
+              tags: {
+                source: "client",
+              },
+              extra: {
+                detail: error.message,
+              },
+            });
           }
           setOauthLoading(false);
         }
         return;
       }
-      const firstCtx = await getCurrentAppUser(supabase);
-      if (firstCtx.authUser) {
-        let oauthProfile = firstCtx.appUser;
-        let oauthProfErr = firstCtx.error;
-        if (oauthProfErr) {
-          await new Promise((r) => setTimeout(r, 250));
-          const again = await getCurrentAppUser(supabase);
-          oauthProfErr = again.error;
-          oauthProfile = again.appUser;
-        }
-        if (oauthProfErr) {
-          if (!cancelled) {
-            setMessage(
-              `Could not load your simulator profile (${oauthProfErr.message}). Check app_users / app_user_profiles and RLS.`
-            );
-            setOauthLoading(false);
-          }
-          return;
-        }
-        if (!oauthProfile) {
-          await supabase.auth.signOut();
-          if (!cancelled) {
-            setMessage("Your account is not registered in the simulator yet.");
-            router.replace("/signup?need_app_user=1");
-            setOauthLoading(false);
-          }
-          return;
-        }
-        if (oauthProfile.is_active === false) {
-          await supabase.auth.signOut();
-          if (!cancelled) {
-            setMessage("This account has been deactivated.");
-            setOauthLoading(false);
-          }
-          return;
-        }
 
-        await recordAppUserActivity(supabase, {
-          appUserId: oauthProfile.id,
-          eventType: "user_logged_in",
-          meta: {
-            provider: oauthProfile.provider ?? undefined,
-          },
-        });
+      const firstCtx = await getCurrentAppUser(supabase);
+      if (!firstCtx.authUser) {
+        if (!cancelled) {
+          setMessage("Could not load your beta session. Please try signing in again.");
+          captureSentryMessage("OAuth sign-in finished without a resolved session", {
+            level: "warning",
+            type: "oauth_session_missing_after_exchange",
+            pathname: "/sign-in",
+            tags: {
+              source: "client",
+            },
+          });
+          setOauthLoading(false);
+        }
+        return;
       }
+
+      let oauthProfile = firstCtx.appUser;
+      let oauthProfErr = firstCtx.error;
+      if (oauthProfErr) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const again = await getCurrentAppUser(supabase);
+        oauthProfErr = again.error;
+        oauthProfile = again.appUser;
+      }
+
+      if (oauthProfErr) {
+        if (!cancelled) {
+          setMessage("We could not finish loading your beta workspace. Please try again.");
+          captureSentryMessage("OAuth sign-in could not load app_users profile", {
+            level: "error",
+            type: "oauth_profile_lookup_failed",
+            pathname: "/sign-in",
+            tags: {
+              source: "client",
+            },
+            extra: {
+              detail: oauthProfErr.message,
+            },
+          });
+          setOauthLoading(false);
+        }
+        return;
+      }
+
+      if (!oauthProfile) {
+        await supabase.auth.signOut();
+        if (!cancelled) {
+          setMessage(
+            "Your beta workspace is still provisioning. Try signing in again in a moment or contact support."
+          );
+          captureSentryMessage("OAuth sign-in finished without app_users profile", {
+            level: "warning",
+            type: "oauth_profile_missing",
+            pathname: "/sign-in",
+            tags: {
+              source: "client",
+            },
+          });
+          setOauthLoading(false);
+        }
+        return;
+      }
+
+      if (oauthProfile.is_active === false) {
+        await supabase.auth.signOut();
+        if (!cancelled) {
+          setMessage("This account has been deactivated.");
+          setOauthLoading(false);
+        }
+        return;
+      }
+
+      await recordAppUserActivity(supabase, {
+        appUserId: oauthProfile.id,
+        eventType: "user_logged_in",
+        meta: {
+          provider: oauthProfile.provider ?? undefined,
+        },
+      });
+
       const dest =
         nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
           ? nextPath
@@ -156,15 +206,17 @@ export function LoginForm() {
       router.replace(dest);
       router.refresh();
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [oauthCode, authType, nextPath, router, searchParams]);
+  }, [authType, nextPath, oauthCode, router, searchParams]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
     setLoading(true);
+
     const supabase = createClient();
     const { error: signErr } = await supabase.auth.signInWithPassword({ email, password });
     if (signErr) {
@@ -176,37 +228,73 @@ export function LoginForm() {
         setShowConfirmEmailWindow(false);
         setMessage(toFriendlyAuthError(signErr.message));
       }
+      if (!lower.includes("invalid login credentials")) {
+        captureSentryMessage("Password sign-in failed", {
+          level: "warning",
+          type: "password_signin_failed",
+          pathname: "/sign-in",
+          tags: {
+            source: "client",
+          },
+          extra: {
+            detail: signErr.message,
+          },
+        });
+      }
       setLoading(false);
       return;
     }
+
     const firstCtx = await getCurrentAppUser(supabase);
     if (!firstCtx.authUser) {
-      setMessage("Could not load session");
+      setMessage("Could not load session.");
       setLoading(false);
       return;
     }
+
     let profileRow = firstCtx.appUser;
     let profileErr = firstCtx.error;
     if (profileErr) {
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((resolve) => setTimeout(resolve, 250));
       const second = await getCurrentAppUser(supabase);
       profileErr = second.error;
       profileRow = second.appUser;
     }
+
     if (profileErr) {
-      setMessage(
-        `Could not load your simulator profile (${profileErr.message}). Check that app_users / app_user_profiles exist and RLS allows your user.`
-      );
+      setMessage("We could not finish loading your beta workspace. Please try again.");
+      captureSentryMessage("Password sign-in could not load app_users profile", {
+        level: "error",
+        type: "password_profile_lookup_failed",
+        pathname: "/sign-in",
+        tags: {
+          source: "client",
+        },
+        extra: {
+          detail: profileErr.message,
+        },
+      });
       setLoading(false);
       return;
     }
+
     if (!profileRow) {
       await supabase.auth.signOut();
-      setMessage("Your account is not registered in the simulator yet.");
-      router.push("/signup?need_app_user=1");
+      setMessage(
+        "Your beta workspace is still provisioning. Try signing in again in a moment or contact support."
+      );
+      captureSentryMessage("Password sign-in finished without app_users profile", {
+        level: "warning",
+        type: "password_profile_missing",
+        pathname: "/sign-in",
+        tags: {
+          source: "client",
+        },
+      });
       setLoading(false);
       return;
     }
+
     if (profileRow.is_active === false) {
       await supabase.auth.signOut();
       setMessage("This account has been deactivated.");
@@ -231,6 +319,32 @@ export function LoginForm() {
     setLoading(false);
   };
 
+  const onGoogleSignIn = async () => {
+    setMessage(null);
+    setGoogleLoading(true);
+    const supabase = createClient();
+    const redirectTo = getAuthRedirectUrl("/auth/callback");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: redirectTo ? { redirectTo } : undefined,
+    });
+    if (error) {
+      setMessage(toFriendlyAuthError(error.message));
+      captureSentryMessage("Google sign-in redirect failed", {
+        level: "warning",
+        type: "signin_google_failed",
+        pathname: "/sign-in",
+        tags: {
+          source: "client",
+        },
+        extra: {
+          detail: error.message,
+        },
+      });
+      setGoogleLoading(false);
+    }
+  };
+
   if (showConfirmEmailWindow) {
     return (
       <section className="mx-auto max-w-md space-y-4 rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-workspace)] p-6 text-[var(--app-shell-bg)]">
@@ -252,26 +366,17 @@ export function LoginForm() {
     );
   }
 
-  const onGoogleSignIn = async () => {
-    setMessage(null);
-    setGoogleLoading(true);
-    const supabase = createClient();
-    const redirectTo = getAuthRedirectUrl("/auth/callback");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: redirectTo ? { redirectTo } : undefined,
-    });
-    if (error) {
-      setMessage(toFriendlyAuthError(error.message));
-      setGoogleLoading(false);
-    }
-  };
-
   return (
     <section className="mx-auto max-w-md space-y-4 rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-workspace)] p-6 text-[var(--app-shell-bg)]">
       {inactiveReason ? (
         <p className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--accent-stone-500)]">
           This account has been deactivated. You cannot sign in anymore.
+        </p>
+      ) : null}
+      {provisioningReason ? (
+        <p className="rounded-[1.2rem] border border-[var(--border-app)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--accent-stone-500)]">
+          Your account exists, but the beta workspace profile is still
+          provisioning. Try signing in again in a moment.
         </p>
       ) : null}
       <div className="flex items-start justify-between gap-3">
@@ -286,7 +391,9 @@ export function LoginForm() {
       {message && message !== "Incorrect email or password." ? (
         <p className="text-sm text-rose-600">{message}</p>
       ) : null}
-      {oauthLoading ? <p className="text-sm text-[var(--accent-stone-500)]">Completing Google sign-in...</p> : null}
+      {oauthLoading ? (
+        <p className="text-sm text-[var(--accent-stone-500)]">Completing Google sign-in...</p>
+      ) : null}
       <button
         type="button"
         onClick={onGoogleSignIn}
@@ -348,4 +455,3 @@ export function LoginForm() {
     </section>
   );
 }
-

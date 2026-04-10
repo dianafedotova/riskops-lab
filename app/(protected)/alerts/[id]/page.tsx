@@ -274,7 +274,6 @@ export default function AlertDetailsPage() {
       const a = row as AlertRow;
       setAlert(a);
       const uid = a.user_id;
-      const ruleCode = (row as AlertWithRuleCode).rule_code?.trim() ?? "";
       if (uid) {
         const { data: linkedUser } = await supabase
           .from("users")

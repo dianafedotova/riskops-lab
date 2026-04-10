@@ -1,32 +1,58 @@
 "use client";
 
-import { createClient } from "@/lib/supabase";
+import { PublicBetaNote } from "@/components/public-beta-note";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
+import { captureSentryMessage } from "@/lib/sentry-capture";
+import { getTurnstileSiteKey, isTurnstileEnabled } from "@/lib/public-config";
+import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { useState } from "react";
 
 export default function ForgotPasswordPage() {
+  const turnstileSiteKey = getTurnstileSiteKey();
+  const turnstileEnabled = isTurnstileEnabled();
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
     setSuccess(null);
+
+    if (turnstileEnabled && !captchaToken) {
+      setMessage("Complete the captcha before requesting a reset link.");
+      return;
+    }
+
     setLoading(true);
     const supabase = createClient();
     const redirectTo = getAuthRedirectUrl("/reset-password");
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      email.trim(),
-      redirectTo ? { redirectTo } : undefined
-    );
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      ...(redirectTo ? { redirectTo } : {}),
+      ...(captchaToken ? { captchaToken } : {}),
+    });
+
     if (error) {
       setMessage(error.message);
+      captureSentryMessage("Password reset request failed", {
+        level: "warning",
+        type: "forgot_password_failed",
+        pathname: "/forgot-password",
+        tags: {
+          source: "client",
+        },
+        extra: {
+          detail: error.message,
+        },
+      });
       setLoading(false);
       return;
     }
+
     setSuccess("Password reset link sent. Check your email.");
     setLoading(false);
   };
@@ -34,7 +60,10 @@ export default function ForgotPasswordPage() {
   return (
     <section className="mx-auto max-w-md space-y-4 rounded border border-[var(--border-app)] bg-[var(--surface-workspace)] p-6 text-[var(--app-shell-bg)]">
       <h1 className="text-lg font-semibold">Forgot password</h1>
-      <p className="text-sm text-[var(--accent-stone-500)]">Enter your email and we will send a reset link.</p>
+      <p className="text-sm text-[var(--accent-stone-500)]">
+        Enter your email and we will send a reset link for your public beta
+        account.
+      </p>
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
       {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
       <form onSubmit={onSubmit} className="space-y-3">
@@ -49,6 +78,9 @@ export default function ForgotPasswordPage() {
             autoComplete="email"
           />
         </label>
+        {turnstileEnabled ? (
+          <TurnstileWidget siteKey={turnstileSiteKey} onTokenChange={setCaptchaToken} />
+        ) : null}
         <button
           type="submit"
           disabled={loading}
@@ -57,6 +89,7 @@ export default function ForgotPasswordPage() {
           {loading ? "Sending..." : "Send reset link"}
         </button>
       </form>
+      <PublicBetaNote compact />
       <p className="text-sm text-[var(--accent-stone-500)]">
         <Link href="/sign-in" className="underline">
           Back to sign in
@@ -65,4 +98,3 @@ export default function ForgotPasswordPage() {
     </section>
   );
 }
-
