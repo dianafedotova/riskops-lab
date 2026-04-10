@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feature/**
+      - fix/**
+      - chore/**
+      - refactor/**
+      - test/**
   pull_request:
   workflow_dispatch:
 
@@ -51,7 +57,7 @@ jobs:
     name: Apply Supabase Migrations
     runs-on: ubuntu-latest
     needs: check
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
