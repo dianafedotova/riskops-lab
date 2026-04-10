@@ -40,6 +40,7 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_AUTH_TURNSTILE_SECRET: ${{ secrets.SUPABASE_AUTH_TURNSTILE_SECRET }}
       SUPABASE_PROJECT_REF: wadctkaeltnizmbpwfsv
     steps:
       - uses: actions/checkout@v4

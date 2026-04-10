@@ -69,8 +69,22 @@ alter table public.internal_notes add column if not exists updated_at timestamp 
 alter table public.internal_notes add column if not exists updated_by text;
 alter table public.internal_notes add column if not exists note_text text;
 
-update public.internal_notes
-set note_text = coalesce(note_text, text)
-where note_text is null;
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'internal_notes'
+      and column_name = 'text'
+  ) then
+    execute $sql$
+      update public.internal_notes
+      set note_text = coalesce(note_text, text)
+      where note_text is null
+    $sql$;
+  end if;
+end
+$$;
 
 commit;
