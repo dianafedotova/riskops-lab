@@ -74,6 +74,25 @@ npm run build
 
 `main` should stay green on all five.
 
+## Branch naming
+
+Use one branch per task or direction of work:
+
+- `feature/...` for new product behavior
+- `fix/...` for bug fixes
+- `chore/...` for CI, docs, config, or tooling
+- `refactor/...` for code cleanup without business-logic changes
+- `test/...` for short-lived technical experiments
+
+Examples:
+
+- `feature/user-risk-timeline`
+- `fix/alert-created-at`
+- `chore/ci-trigger-branches`
+- `refactor/review-workspace-split`
+
+`CI` now runs automatically on pushes to `main` and to branches matching those prefixes, plus on pull requests. Database migrations remain restricted to `main` only.
+
 ## Architecture and refactor docs
 
 - [docs/architecture.md](docs/architecture.md)
