@@ -7,11 +7,6 @@ alter table public.transactions
   add column if not exists reason_display text;
 
 update public.transactions
-set reject_reason = null
-where coalesce(type, '') <> 'Card top-up'
-  and reject_reason is not null;
-
-update public.transactions
 set
   status_code = case
     when lower(coalesce(status, '')) = 'completed' then 'ACSC'
@@ -58,30 +53,6 @@ where coalesce(type, '') <> 'Bank transfer'
     or status_display is not null
     or reason_display is not null
   );
-
-alter table public.transactions drop constraint if exists transactions_reject_reason_check;
-
-alter table public.transactions add constraint transactions_reject_reason_check check (
-  (
-    lower(coalesce(status, '')) = 'rejected'
-    and coalesce(type, '') = 'Card top-up'
-    and reject_reason is not null
-    and jsonb_typeof(reject_reason) = 'object'
-    and reject_reason ? 'code'
-    and reject_reason ? 'label'
-    and reject_reason ? 'category'
-    and coalesce(reject_reason->>'code', '') <> ''
-    and coalesce(reject_reason->>'label', '') <> ''
-    and (reject_reason->>'category') = any (array['card', '3ds', 'aml', 'generic']::text[])
-  )
-  or (
-    (
-      lower(coalesce(status, '')) <> 'rejected'
-      or coalesce(type, '') <> 'Card top-up'
-    )
-    and reject_reason is null
-  )
-);
 
 alter table public.transactions drop constraint if exists transactions_bank_transfer_iso_check;
 
