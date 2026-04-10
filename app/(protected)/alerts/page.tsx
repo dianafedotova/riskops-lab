@@ -9,8 +9,7 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/components/current-user-provider";
-import { canSeeStaffActionControls, canSeeTraineeWorkspace } from "@/lib/permissions/checks";
-import { listAssignedAlertsForTrainee, unassignAlertFromTraineeSelf } from "@/lib/services/assignments";
+import { canSeeStaffActionControls } from "@/lib/permissions/checks";
 import { TABLE_PY } from "@/lib/table-padding";
 import { createClient } from "@/lib/supabase";
 import type { AlertRow, ImportedSimulatorAlertRow } from "@/lib/types";
@@ -56,7 +55,6 @@ const PAGE_SIZE_OPTIONS = [
 export default function AlertsPage() {
   const { appUser } = useCurrentUser();
   const canViewStaffActions = canSeeStaffActionControls(appUser?.role);
-  const canUseTraineeWorkspace = canSeeTraineeWorkspace(appUser?.role);
   const router = useRouter();
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,9 +71,6 @@ export default function AlertsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [generatedAlerts, setGeneratedAlerts] = useState<ImportedSimulatorAlertRow[]>([]);
   const [generatedAlertsTitle, setGeneratedAlertsTitle] = useState<string | null>(null);
-  const [myAssignedAlertIds, setMyAssignedAlertIds] = useState<Set<string>>(() => new Set());
-  const [unassignBusyId, setUnassignBusyId] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -101,27 +96,6 @@ export default function AlertsPage() {
       cancelled = true;
     };
   }, [reloadTick]);
-
-  useEffect(() => {
-    if (!appUser || !canUseTraineeWorkspace) {
-      setMyAssignedAlertIds(new Set());
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const supabase = createClient();
-      const { alerts: assigned, error: assignErr } = await listAssignedAlertsForTrainee(supabase, appUser.id);
-      if (cancelled) return;
-      if (assignErr) {
-        setMyAssignedAlertIds(new Set());
-        return;
-      }
-      setMyAssignedAlertIds(new Set(assigned.map((a) => a.id)));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [appUser, canUseTraineeWorkspace, reloadTick]);
 
   const hint = (
     <div className="space-y-1 text-xs text-rose-800/90">
@@ -227,28 +201,6 @@ export default function AlertsPage() {
     setGeneratedAlerts(created);
     setGeneratedAlertsTitle(created.length === 1 ? "1 alert imported" : `${created.length} alerts imported`);
     setReloadTick((tick) => tick + 1);
-  };
-
-  const unassignSelf = async (alert: AlertRow) => {
-    if (!appUser) return;
-    setUnassignBusyId(alert.id);
-    try {
-      const supabase = createClient();
-      const { error: uErr } = await unassignAlertFromTraineeSelf(supabase, appUser.id, {
-        publicId: alert.id,
-        internalId: alert.internal_id ?? null,
-      });
-      if (uErr) throw uErr;
-      setMyAssignedAlertIds((prev) => {
-        const next = new Set(prev);
-        next.delete(alert.id);
-        return next;
-      });
-    } catch {
-      setError("Could not unassign this alert.");
-    } finally {
-      setUnassignBusyId(null);
-    }
   };
 
   const typeBadgeClass = (type: string | null | undefined) =>
@@ -446,8 +398,7 @@ export default function AlertsPage() {
             <col className="w-[7%]" />
             <col className="w-[8%]" />
             <col className="w-[8%]" />
-            <col className="min-w-[120px] w-[28%]" />
-            {canUseTraineeWorkspace ? <col className="w-[12%]" /> : null}
+            <col className="min-w-[120px] w-[40%]" />
           </colgroup>
           <thead>
             <tr className="sticky top-0 z-10 border-b border-slate-300 bg-slate-200/95 text-left text-xs uppercase tracking-wide text-slate-600 backdrop-blur-sm">
@@ -458,16 +409,15 @@ export default function AlertsPage() {
               <th className={`px-4 ${TABLE_PY}`}>Severity</th>
               <th className={`px-4 ${TABLE_PY}`}>Status</th>
               <th className={`px-4 ${TABLE_PY}`}>Description</th>
-              {canUseTraineeWorkspace ? <th className={`px-4 ${TABLE_PY}`}>Actions</th> : null}
             </tr>
           </thead>
           {loading ? (
-            <TableSkeleton rows={8} cols={canUseTraineeWorkspace ? 8 : 7} />
+            <TableSkeleton rows={8} cols={7} />
           ) : (
             <tbody>
               {totalFiltered === 0 ? (
                 <tr>
-                  <td colSpan={canUseTraineeWorkspace ? 8 : 7} className="px-4 py-8">
+                  <td colSpan={7} className="px-4 py-8">
                     <div className="rounded-[1.2rem] border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-500">
                       No alerts yet.
                     </div>
@@ -550,25 +500,6 @@ export default function AlertsPage() {
                     <td className={`px-4 ${TABLE_PY} min-w-0 whitespace-normal break-words`} title={getDescription(alert as AlertWithRuleName)}>
                       {getDescription(alert as AlertWithRuleName)}
                     </td>
-                    {canUseTraineeWorkspace ? (
-                      <td className={`px-4 ${TABLE_PY}`}>
-                        {myAssignedAlertIds.has(alert.id) ? (
-                          <button
-                            type="button"
-                            disabled={unassignBusyId === alert.id}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void unassignSelf(alert);
-                            }}
-                            className="ui-btn ui-btn-secondary h-auto min-h-0 px-2.5 py-1 text-[11px] font-medium disabled:opacity-50"
-                          >
-                            {unassignBusyId === alert.id ? "…" : "Unassign"}
-                          </button>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </td>
-                    ) : null}
                   </tr>
                 ))
               )}
