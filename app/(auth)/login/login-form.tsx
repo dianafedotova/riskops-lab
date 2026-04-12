@@ -3,6 +3,10 @@
 import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { loadAmplitudeOrganizationMeta, trackTraineeIdentityEvent } from "@/lib/amplitude";
+import {
+  clearMarketingSurfaceSessionFlag,
+  pushPublicDataLayerEvent,
+} from "@/lib/public-data-layer";
 import { captureSentryMessage } from "@/lib/sentry-capture";
 import { recordAppUserActivity } from "@/lib/services/app-user-activity";
 import { createClient } from "@/lib/supabase";
@@ -203,13 +207,18 @@ export function LoginForm() {
       trackTraineeIdentityEvent("login_completed", oauthProfile.provider ?? "google", oauthOrgMeta ?? {
         organizationId: oauthProfile.organization_id,
       });
+      pushPublicDataLayerEvent("login_completed", {
+        method: oauthProfile.provider ?? "google",
+        page_type: "sign_in",
+        route_group: "auth",
+      });
 
       const dest =
         nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
           ? nextPath
           : "/dashboard";
-      router.replace(dest);
-      router.refresh();
+      clearMarketingSurfaceSessionFlag();
+      window.location.assign(dest);
     })();
 
     return () => {
@@ -318,18 +327,28 @@ export function LoginForm() {
     trackTraineeIdentityEvent("login_completed", profileRow.provider ?? "password", orgMeta ?? {
       organizationId: profileRow.organization_id,
     });
+    pushPublicDataLayerEvent("login_completed", {
+      method: profileRow.provider ?? "password",
+      page_type: "sign_in",
+      route_group: "auth",
+    });
 
     const dest =
       nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
         ? nextPath
         : "/dashboard";
-    router.push(dest);
-    router.refresh();
-    setLoading(false);
+    clearMarketingSurfaceSessionFlag();
+    window.location.assign(dest);
   };
 
   const onGoogleSignIn = async () => {
     setMessage(null);
+    pushPublicDataLayerEvent("cta_clicked", {
+      cta_name: "continue_with_google",
+      cta_location: "sign_in_page",
+      page_type: "sign_in",
+      route_group: "auth",
+    });
     setGoogleLoading(true);
     const supabase = createClient();
     const redirectTo = getAuthRedirectUrl("/auth/callback");

@@ -1,4 +1,12 @@
 import { PublicBetaNote } from "@/components/public-beta-note";
+import { buildPublicPageMetadata } from "@/lib/public-seo";
+
+export const metadata = buildPublicPageMetadata({
+  title: "Privacy",
+  description:
+    "Read the RiskOps Lab beta privacy baseline and the synthetic-data rules for using the simulator safely.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (

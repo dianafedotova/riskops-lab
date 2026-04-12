@@ -30,4 +30,18 @@ describe("buildSecurityHeaders", () => {
 
     expect(cspHeader?.value).toContain("https://o4511194737082368.ingest.de.sentry.io");
   });
+
+  it("allows the public marketing stack and injected Silktide origins", () => {
+    const headers = buildSecurityHeaders({
+      silktideCssUrl: "https://cdn.silktide.com/cookie-manager/banner.css",
+      silktideJsUrl: "https://cdn.silktide.com/cookie-manager/banner.js",
+    });
+    const cspHeader = headers.find((header) => header.key === "Content-Security-Policy-Report-Only");
+
+    expect(cspHeader?.value).toContain("https://www.googletagmanager.com");
+    expect(cspHeader?.value).toContain("https://www.google-analytics.com");
+    expect(cspHeader?.value).toContain("https://www.facebook.com");
+    expect(cspHeader?.value).toContain("https://px.ads.linkedin.com");
+    expect(cspHeader?.value).toContain("https://cdn.silktide.com");
+  });
 });

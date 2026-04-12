@@ -6,8 +6,8 @@ describe("public metadata builders", () => {
     const sitemap = buildPublicSitemap("https://riskopslab.com");
 
     expect(sitemap.some((entry) => entry.url === "https://riskopslab.com/")).toBe(true);
-    expect(sitemap.some((entry) => entry.url === "https://riskopslab.com/signup")).toBe(true);
     expect(sitemap.some((entry) => entry.url === "https://riskopslab.com/guide")).toBe(true);
+    expect(sitemap.some((entry) => entry.url === "https://riskopslab.com/signup")).toBe(false);
   });
 
   it("disallows protected routes in robots", () => {
@@ -17,6 +17,9 @@ describe("public metadata builders", () => {
 
     expect(defaultRule.disallow).toContain("/dashboard");
     expect(defaultRule.disallow).toContain("/api");
+    expect(defaultRule.allow).not.toContain("/knowledge-base");
+    expect(defaultRule.allow).toContain("/sign-in");
+    expect(defaultRule.allow).toContain("/indexnow-key.txt");
     expect(robots.sitemap).toBe("https://riskopslab.com/sitemap.xml");
   });
 });

@@ -1,4 +1,12 @@
 import { PublicBetaNote } from "@/components/public-beta-note";
+import { buildPublicPageMetadata } from "@/lib/public-seo";
+
+export const metadata = buildPublicPageMetadata({
+  title: "Terms and Conditions",
+  description:
+    "Review the RiskOps Lab beta terms for synthetic-only use, training scope, and non-production limitations.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (

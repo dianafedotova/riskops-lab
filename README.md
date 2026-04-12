@@ -29,6 +29,7 @@ Public beta training workspace for fraud and AML investigation practice. The pro
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_SUPPORT_EMAIL`
 - `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+- `NEXT_PUBLIC_AMPLITUDE_API_KEY` (if product analytics is enabled)
 - `SUPABASE_AUTH_TURNSTILE_SECRET`
 - `NEXT_PUBLIC_SENTRY_DSN`
 - `SENTRY_DSN` (optional server / edge override)
@@ -36,6 +37,33 @@ Public beta training workspace for fraud and AML investigation practice. The pro
 - `SENTRY_ORG`
 - `SENTRY_PROJECT`
 - `SENTRY_ENVIRONMENT` (optional)
+
+## Optional growth / SEO env
+
+- `NEXT_PUBLIC_GTM_ID`
+- `NEXT_PUBLIC_SILKTIDE_CSS_URL`
+- `NEXT_PUBLIC_SILKTIDE_JS_URL`
+- `NEXT_PUBLIC_SILKTIDE_CONFIG_JSON`
+- `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`
+- `NEXT_PUBLIC_BING_SITE_VERIFICATION`
+- `INDEXNOW_KEY`
+
+Vendor-specific tags for `GA4`, `Google Ads`, `Meta Pixel`, and `LinkedIn Insight Tag` should stay in `GTM` rather than expanding the app env surface unless a later wave explicitly needs app-owned configuration.
+
+## Optional local analytics override
+
+- `NEXT_PUBLIC_ENABLE_AMPLITUDE_DEV=false`
+
+By default, Amplitude is disabled on `localhost` in development to avoid noisy console errors from offline / blocked remote-config fetches and retry loops. Set `NEXT_PUBLIC_ENABLE_AMPLITUDE_DEV=true` only if you explicitly want local analytics traffic.
+
+## Optional product email env
+
+- `RESEND_API_KEY`
+- `EMAIL_FROM_ADDRESS`
+- `EMAIL_FROM_NAME`
+- `EMAIL_REPLY_TO_ADDRESS`
+
+`Wave 3` uses `Resend` only for product-owned notification emails such as reviewed cases and assigned alerts. `Supabase Auth` remains the source of truth for signup confirmation, password reset, magic links, and other auth-owned email flows.
 
 ## Required GitHub Actions secrets
 
@@ -96,6 +124,7 @@ Examples:
 ## Architecture and refactor docs
 
 - [docs/architecture.md](docs/architecture.md)
+- [docs/growth-program.md](docs/growth-program.md)
 - [docs/refactor-program.md](docs/refactor-program.md)
 - [docs/ui-standards.md](docs/ui-standards.md)
 

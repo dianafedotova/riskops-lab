@@ -5,6 +5,7 @@ import type { AppUserRow } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const AMPLITUDE_API_KEY = process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY?.trim() ?? "";
+const AMPLITUDE_DEV_ENABLED = process.env.NEXT_PUBLIC_ENABLE_AMPLITUDE_DEV?.trim() === "true";
 const FIRST_TOUCH_STORAGE_KEY = "rol:amplitude:first-touch";
 const FIRST_CASE_OPENED_KEY = "rol:amplitude:first-case-opened";
 const SESSION_STARTED_KEY = "rol:amplitude:session-started";
@@ -38,6 +39,18 @@ let currentAmplitudeOrgContext: AmplitudeOrgContext | null = null;
 
 function isBrowser() {
   return typeof window !== "undefined";
+}
+
+function isLocalHostname(hostname: string | null | undefined) {
+  const normalized = (hostname ?? "").trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+export function isAmplitudeEnabled() {
+  if (!isBrowser() || !AMPLITUDE_API_KEY) return false;
+  if (AMPLITUDE_DEV_ENABLED) return true;
+  if (process.env.NODE_ENV === "production") return true;
+  return !isLocalHostname(window.location.hostname);
 }
 
 function parseUrl(raw: string | null | undefined): URL | null {
@@ -77,13 +90,13 @@ function buildCurrentAttribution(): StoredAttribution {
 }
 
 export function captureAmplitudeAttribution() {
-  if (!isBrowser()) return;
+  if (!isAmplitudeEnabled()) return;
   if (window.localStorage.getItem(FIRST_TOUCH_STORAGE_KEY)) return;
   window.localStorage.setItem(FIRST_TOUCH_STORAGE_KEY, JSON.stringify(buildCurrentAttribution()));
 }
 
 export function initAmplitude() {
-  if (!isBrowser() || !AMPLITUDE_API_KEY) return Promise.resolve();
+  if (!isAmplitudeEnabled()) return Promise.resolve();
   if (initPromise) return initPromise;
 
   initPromise = initAll(AMPLITUDE_API_KEY, {
@@ -231,6 +244,7 @@ export function getAmplitudeContextType(properties: {
 }
 
 export function trackTraineeEvent(role: string | null | undefined, eventName: string, properties: EventProps = {}) {
+  if (!isAmplitudeEnabled()) return;
   if (!canTrackTrainee(role)) return;
   void initAmplitude();
   captureAmplitudeAttribution();
@@ -242,6 +256,7 @@ export function trackTraineeIdentityEvent(
   method: string,
   options?: AmplitudeIdentityOptions
 ) {
+  if (!isAmplitudeEnabled()) return;
   if (!canTrackTrainee("trainee", options)) return;
   void initAmplitude();
   captureAmplitudeAttribution();
@@ -268,6 +283,7 @@ export async function loadAmplitudeOrganizationMeta(
 }
 
 export function syncAmplitudeUser(appUser: AppUserRow | null, organizationMeta?: AmplitudeOrgContext | null) {
+  if (!isAmplitudeEnabled()) return;
   if (!appUser) {
     currentAmplitudeOrgContext = null;
     setUserId(undefined);
@@ -293,6 +309,7 @@ export function syncAmplitudeUser(appUser: AppUserRow | null, organizationMeta?:
 }
 
 export function trackTraineeSessionStarted(role: string | null | undefined) {
+  if (!isAmplitudeEnabled()) return;
   if (!canTrackTrainee(role) || !isBrowser()) return;
   if (window.sessionStorage.getItem(SESSION_STARTED_KEY)) return;
   window.sessionStorage.setItem(SESSION_STARTED_KEY, "1");
@@ -300,6 +317,7 @@ export function trackTraineeSessionStarted(role: string | null | undefined) {
 }
 
 export function markFirstCaseOpened(role: string | null | undefined, properties: EventProps = {}) {
+  if (!isAmplitudeEnabled()) return;
   if (!canTrackTrainee(role) || !isBrowser()) return;
   if (window.localStorage.getItem(FIRST_CASE_OPENED_KEY)) return;
   window.localStorage.setItem(FIRST_CASE_OPENED_KEY, "1");
@@ -311,6 +329,7 @@ export function markFirstCaseOpened(role: string | null | undefined, properties:
 }
 
 export async function flushAmplitude() {
+  if (!isAmplitudeEnabled()) return;
   try {
     await flush().promise;
   } catch {
