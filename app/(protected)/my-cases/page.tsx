@@ -5,6 +5,7 @@ import { TableSkeleton } from "@/components/table-skeleton";
 import { TableSwipeHint } from "@/components/table-swipe-hint";
 import { useCurrentUser } from "@/components/current-user-provider";
 import { formatAlertStatusForList, formatDate } from "@/lib/format";
+import { getAmplitudeNavigationSource, trackTraineeEvent } from "@/lib/amplitude";
 import { canSeeTraineeWorkspace } from "@/lib/permissions/checks";
 import { listAssignedAlertsForTrainee, unassignAlertFromTraineeSelf } from "@/lib/services/assignments";
 import { createClient } from "@/lib/supabase";
@@ -240,6 +241,14 @@ export default function MyCasesPage() {
     if (userLoading) return;
     void loadAll();
   }, [userLoading, loadAll]);
+
+  useEffect(() => {
+    if (!canView) return;
+    trackTraineeEvent(appUser?.role, "my_cases_viewed", {
+      is_first_time: false,
+      source: getAmplitudeNavigationSource(),
+    });
+  }, [appUser?.role, canView]);
 
   useEffect(() => {
     setListPage(1);

@@ -2,6 +2,7 @@
 
 import { getCurrentAppUser } from "@/lib/auth/current-app-user";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
+import { loadAmplitudeOrganizationMeta, trackTraineeIdentityEvent } from "@/lib/amplitude";
 import { captureSentryMessage } from "@/lib/sentry-capture";
 import { recordAppUserActivity } from "@/lib/services/app-user-activity";
 import { createClient } from "@/lib/supabase";
@@ -198,6 +199,10 @@ export function LoginForm() {
           provider: oauthProfile.provider ?? undefined,
         },
       });
+      const oauthOrgMeta = await loadAmplitudeOrganizationMeta(supabase, oauthProfile.organization_id);
+      trackTraineeIdentityEvent("login_completed", oauthProfile.provider ?? "google", oauthOrgMeta ?? {
+        organizationId: oauthProfile.organization_id,
+      });
 
       const dest =
         nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
@@ -308,6 +313,10 @@ export function LoginForm() {
       meta: {
         provider: profileRow.provider ?? undefined,
       },
+    });
+    const orgMeta = await loadAmplitudeOrganizationMeta(supabase, profileRow.organization_id);
+    trackTraineeIdentityEvent("login_completed", profileRow.provider ?? "password", orgMeta ?? {
+      organizationId: profileRow.organization_id,
     });
 
     const dest =
@@ -424,6 +433,7 @@ export function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="email"
           />
@@ -435,6 +445,7 @@ export function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="current-password"
           />

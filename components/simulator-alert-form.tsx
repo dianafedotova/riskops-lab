@@ -118,6 +118,7 @@ function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
+      data-amp-mask=""
       className={`dark-input h-11 w-full px-4 text-sm outline-none focus:ring-1 focus:ring-[var(--brand-ring)] disabled:opacity-60 ${props.className ?? ""}`}
     />
   );
@@ -127,6 +128,7 @@ function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
+      data-amp-mask=""
       className={`dark-input min-h-[132px] w-full px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-[var(--brand-ring)] disabled:opacity-60 ${props.className ?? ""}`}
     />
   );

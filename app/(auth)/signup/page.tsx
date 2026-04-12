@@ -3,6 +3,7 @@
 import { FilterSelect } from "@/components/filter-select";
 import { PublicBetaNote } from "@/components/public-beta-note";
 import { TurnstileWidget } from "@/components/turnstile-widget";
+import { getAmplitudeEventSpec, trackTraineeIdentityEvent } from "@/lib/amplitude";
 import { COUNTRY_OPTIONS } from "@/lib/auth/countries";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { captureSentryMessage } from "@/lib/sentry-capture";
@@ -27,6 +28,8 @@ function NeedAppUserBanner() {
     </p>
   );
 }
+
+void getAmplitudeEventSpec;
 
 export default function SignupPage() {
   const router = useRouter();
@@ -161,12 +164,20 @@ export default function SignupPage() {
     }
 
     if (data.session) {
+      trackTraineeIdentityEvent("signup_completed", "password", {
+        organizationName: "RiskOps Lab",
+        organizationSlug: "riskops-lab",
+      });
       router.push("/dashboard");
       router.refresh();
       setLoading(false);
       return;
     }
 
+    trackTraineeIdentityEvent("signup_completed", "password", {
+      organizationName: "RiskOps Lab",
+      organizationSlug: "riskops-lab",
+    });
     setSuccessMessage("Account created. Please check your email to confirm your account.");
     setLoading(false);
   };
@@ -179,8 +190,8 @@ export default function SignupPage() {
           {successMessage}
         </p>
         <p className="text-sm leading-6 text-[var(--accent-stone-500)]">
-          We provision every confirmed beta user as a trainee in the shared
-          public beta workspace after auth completes.
+          We provision every confirmed account as a trainee in the default
+          RiskOps Lab workspace after auth completes.
         </p>
         <PublicBetaNote compact />
         <div className="space-y-2">
@@ -209,7 +220,7 @@ export default function SignupPage() {
 
       <p className="text-sm leading-6 text-[var(--accent-stone-500)]">
         Open signup is enabled for the public beta. New accounts join the
-        shared trainee workspace and must use synthetic data only.
+        default trainee workspace and must use synthetic data only.
       </p>
 
       <Suspense fallback={null}>
@@ -243,6 +254,7 @@ export default function SignupPage() {
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="given-name"
           />
@@ -254,6 +266,7 @@ export default function SignupPage() {
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="family-name"
           />
@@ -277,6 +290,7 @@ export default function SignupPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="email"
           />
@@ -288,6 +302,7 @@ export default function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />
@@ -299,6 +314,7 @@ export default function SignupPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />

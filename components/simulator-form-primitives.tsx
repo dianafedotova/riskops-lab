@@ -45,6 +45,7 @@ export function SimulatorFormInput(props: InputHTMLAttributes<HTMLInputElement>)
   return (
     <input
       {...props}
+      data-amp-mask=""
       className={uiCx(brandedInputClassName, props.className)}
     />
   );
@@ -54,6 +55,7 @@ export function SimulatorFormTextarea(props: TextareaHTMLAttributes<HTMLTextArea
   return (
     <textarea
       {...props}
+      data-amp-mask=""
       className={uiCx(brandedTextareaClassName, props.className)}
     />
   );

@@ -4,6 +4,7 @@ import { formatDate } from "@/lib/format";
 import { useCurrentUser } from "@/components/current-user-provider";
 import { canSeeTraineeWorkspace } from "@/lib/permissions/checks";
 import { createClient } from "@/lib/supabase";
+import { getAmplitudeNavigationSource, trackTraineeEvent } from "@/lib/amplitude";
 import { listAssignedAlertsForTrainee, unassignAlertFromTraineeSelf } from "@/lib/services/assignments";
 import { listWatchlistUsersForTrainee, removeSimulatorUserFromWatchlist } from "@/lib/services/watchlist";
 import {
@@ -185,6 +186,14 @@ export default function DashboardPage() {
     if (userLoading) return;
     void loadTraineeSections();
   }, [userLoading, loadTraineeSections]);
+
+  useEffect(() => {
+    if (!canViewTraineeWorkspace) return;
+    trackTraineeEvent(appUser?.role, "dashboard_viewed", {
+      is_first_time: false,
+      source: getAmplitudeNavigationSource(),
+    });
+  }, [appUser?.role, canViewTraineeWorkspace]);
 
   const dashboardCases = sortTraineeCasesByUpdatedAt(filterActiveCases(cases)).slice(0, 5);
 

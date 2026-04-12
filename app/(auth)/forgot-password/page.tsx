@@ -2,6 +2,7 @@
 
 import { PublicBetaNote } from "@/components/public-beta-note";
 import { TurnstileWidget } from "@/components/turnstile-widget";
+import { getAmplitudeEventSpec } from "@/lib/amplitude";
 import { getAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { captureSentryMessage } from "@/lib/sentry-capture";
 import { getTurnstileSiteKey, isTurnstileEnabled } from "@/lib/public-config";
@@ -10,6 +11,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 export default function ForgotPasswordPage() {
+  void getAmplitudeEventSpec;
   const turnstileSiteKey = getTurnstileSiteKey();
   const turnstileEnabled = isTurnstileEnabled();
   const [email, setEmail] = useState("");
@@ -74,6 +76,7 @@ export default function ForgotPasswordPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="email"
           />
