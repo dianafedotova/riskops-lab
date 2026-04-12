@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 
 const publicNavLinks = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
+  { href: "/knowledge-base", label: "Knowledge Base", match: (p: string) => p === "/knowledge-base" || p.startsWith("/knowledge-base/") },
   { href: "/guide", label: "Guide", match: (p: string) => p === "/guide" },
   { href: "/about", label: "About", match: (p: string) => p === "/about" },
 ] as const;
@@ -23,6 +24,7 @@ const privateNavLinksBase = [
   { href: "/dashboard", label: "Dashboard", match: (p: string) => p === "/dashboard" },
   { href: "/users", label: "Users", match: (p: string) => p === "/users" || p.startsWith("/users/") },
   { href: "/alerts", label: "Alerts", match: (p: string) => p === "/alerts" || p.startsWith("/alerts/") },
+  { href: "/knowledge-base", label: "Knowledge Base", match: (p: string) => p === "/knowledge-base" || p.startsWith("/knowledge-base/") },
   { href: "/guide", label: "Guide", match: (p: string) => p === "/guide" },
   { href: "/about", label: "About", match: (p: string) => p === "/about" },
 ] as const;

@@ -17,7 +17,7 @@ describe("public metadata builders", () => {
 
     expect(defaultRule.disallow).toContain("/dashboard");
     expect(defaultRule.disallow).toContain("/api");
-    expect(defaultRule.allow).not.toContain("/knowledge-base");
+    expect(defaultRule.allow).toContain("/knowledge-base");
     expect(defaultRule.allow).toContain("/sign-in");
     expect(defaultRule.allow).toContain("/indexnow-key.txt");
     expect(robots.sitemap).toBe("https://riskopslab.com/sitemap.xml");

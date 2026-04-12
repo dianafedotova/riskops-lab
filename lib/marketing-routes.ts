@@ -7,7 +7,14 @@ const AUTH_MARKETING_PATHS = new Set([
   "/reset-password",
 ]);
 
-const PUBLIC_MARKETING_PATHS = new Set(["/", "/about", "/guide", "/privacy", "/terms"]);
+const PUBLIC_MARKETING_PATHS = new Set([
+  "/",
+  "/about",
+  "/guide",
+  "/knowledge-base",
+  "/privacy",
+  "/terms",
+]);
 
 export function normalizePathname(pathname: string | null | undefined): string {
   if (!pathname) return "/";
@@ -19,7 +26,8 @@ export function isAuthMarketingPath(pathname: string | null | undefined): boolea
 }
 
 export function isPublicMarketingPath(pathname: string | null | undefined): boolean {
-  return PUBLIC_MARKETING_PATHS.has(normalizePathname(pathname));
+  const normalized = normalizePathname(pathname);
+  return normalized.startsWith("/knowledge-base/") || PUBLIC_MARKETING_PATHS.has(normalized);
 }
 
 export function isMarketingSurfacePath(pathname: string | null | undefined): boolean {
@@ -53,6 +61,18 @@ export function getMarketingRouteGroup(pathname: string | null | undefined): "au
 export function getMarketingPageType(pathname: string | null | undefined): string | null {
   const normalized = normalizePathname(pathname);
 
+  if (normalized === "/knowledge-base") {
+    return "knowledge_base_index";
+  }
+
+  if (normalized.startsWith("/knowledge-base/category/")) {
+    return "knowledge_base_category";
+  }
+
+  if (normalized.startsWith("/knowledge-base/")) {
+    return "knowledge_base_article";
+  }
+
   switch (normalized) {
     case "/":
       return "landing";
@@ -77,11 +97,29 @@ export function getMarketingPageType(pathname: string | null | undefined): strin
   }
 }
 
-/** Reserved for Wave 2 (Knowledge Base); until then always returns nulls. */
 export function getKnowledgeBaseRouteContext(pathname: string | null | undefined): {
   category: string | null;
   slug: string | null;
 } {
-  void pathname;
-  return { category: null, slug: null };
+  const normalized = normalizePathname(pathname);
+  const segments = normalized.split("/").filter(Boolean);
+
+  if (segments[0] !== "knowledge-base") {
+    return {
+      category: null,
+      slug: null,
+    };
+  }
+
+  if (segments[1] === "category") {
+    return {
+      category: segments[2] ?? null,
+      slug: null,
+    };
+  }
+
+  return {
+    category: null,
+    slug: segments[1] ?? null,
+  };
 }

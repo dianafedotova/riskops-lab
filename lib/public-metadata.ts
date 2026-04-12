@@ -31,6 +31,7 @@ export function buildPublicRobots(origin: string): MetadataRoute.Robots {
           "/",
           "/about",
           "/guide",
+          "/knowledge-base",
           "/privacy",
           "/terms",
           "/sign-in",

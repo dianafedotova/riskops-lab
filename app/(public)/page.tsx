@@ -205,6 +205,23 @@ export default function LandingPage() {
                 Open Guide
               </PublicTrackedLink>
             </div>
+            <p className="text-sm leading-7 text-[var(--accent-stone-500)]">
+              Prefer to read first?{" "}
+              <PublicTrackedLink
+                href="/knowledge-base"
+                eventName="cta_clicked"
+                eventProps={{
+                  cta_name: "open_knowledge_base",
+                  cta_location: "landing_hero_supporting_link",
+                  page_type: "landing",
+                  route_group: "public",
+                }}
+                className="font-medium text-[var(--brand-700)] underline"
+              >
+                Explore the Knowledge Base
+              </PublicTrackedLink>
+              .
+            </p>
           </div>
         </section>
 
