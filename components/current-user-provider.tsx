@@ -1,5 +1,6 @@
 "use client";
 
+import { AmplitudeUserSync } from "@/components/amplitude-user-sync";
 import {
   useCurrentUserState,
   type CurrentUserInitialSession,
@@ -19,7 +20,10 @@ export function CurrentUserProvider({
 }) {
   const value = useCurrentUserState(initialSession);
   return (
-    <CurrentUserContext.Provider value={value}>{children}</CurrentUserContext.Provider>
+    <CurrentUserContext.Provider value={value}>
+      <AmplitudeUserSync />
+      {children}
+    </CurrentUserContext.Provider>
   );
 }
 

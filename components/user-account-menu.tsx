@@ -3,6 +3,7 @@
 import { AppUserAvatar } from "@/components/app-user-avatar";
 import { NavLoadingOverlay } from "@/components/nav-loading-overlay";
 import { appUserDisplayName, appUserInitials } from "@/lib/auth/app-user-display";
+import { flushAmplitude, trackTraineeIdentityEvent } from "@/lib/amplitude";
 import { createClient } from "@/lib/supabase";
 import type { AppUserRow } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
@@ -42,6 +43,10 @@ export function UserAccountMenu({ authUser, appUser }: UserAccountMenuProps) {
     setSigningOut(true);
     close();
     try {
+      if (appUser?.role === "trainee") {
+        trackTraineeIdentityEvent("logout_completed", appUser.provider ?? "password");
+        await flushAmplitude();
+      }
       const supabase = createClient();
       const { error } = await supabase.auth.signOut({ scope: "local" });
       if (error) console.warn(error);

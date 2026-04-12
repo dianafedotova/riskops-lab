@@ -135,6 +135,8 @@ export function AlertTraineeReviewWorkspacePanels({
         reviewMode
         privateAlertInternalId={null}
         privateSimulatorUserId={null}
+        analyticsContextType="alert"
+        analyticsAlertId={alertPublicId}
         submissions={[]}
         createThread={createReviewThread}
         prepareTraineeThread={syncDecisionToReviewThread}
@@ -159,6 +161,9 @@ export function AlertTraineeReviewWorkspacePanels({
             reviewMode
             privateAlertInternalId={null}
             privateSimulatorUserId={null}
+            analyticsContextType="alert"
+            analyticsAlertId={alertPublicId}
+            analyticsHasExistingThread
             submissions={[]}
             showComposer={false}
             onDeleteDraftThread={deleteDraftReviewThread}
@@ -186,6 +191,9 @@ export function AlertTraineeReviewWorkspacePanels({
                 reviewMode
                 privateAlertInternalId={null}
                 privateSimulatorUserId={null}
+                analyticsContextType="alert"
+                analyticsAlertId={alertPublicId}
+                analyticsHasExistingThread
                 submissions={threadSubmissions}
                 showComposer={false}
                 showTitle={false}

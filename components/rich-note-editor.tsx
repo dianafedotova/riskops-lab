@@ -125,6 +125,7 @@ export function RichNoteEditor({
             "[&_a]:pointer-events-none [&_a]:cursor-text [&_a]:text-inherit [&_a]:no-underline",
             "[&_p]:my-0 [&_p+ul]:mt-2 [&_p+ol]:mt-2 [&_ul]:ml-5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ol]:ml-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-slate-600",
           ].join(" "),
+          "data-amp-mask": "",
         },
         handleDOMEvents: {
           mousedown: (view, event) => {
@@ -329,7 +330,10 @@ export function RichNoteEditor({
     : null;
 
   return (
-    <div className={`rich-note-shell overflow-hidden rounded-[1.25rem] border border-slate-200/90 bg-white/96 ${className}`}>
+    <div
+      data-amp-mask=""
+      className={`rich-note-shell overflow-hidden rounded-[1.25rem] border border-slate-200/90 bg-white/96 ${className}`}
+    >
       <div
         className={`rich-note-toolbar flex flex-wrap items-center gap-2 border-b border-slate-200/85 ${
           size === "compact" ? "px-3 py-2" : "px-4 py-2.5"

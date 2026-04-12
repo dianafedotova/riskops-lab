@@ -1,12 +1,14 @@
 "use client";
 
 import { PublicBetaNote } from "@/components/public-beta-note";
+import { getAmplitudeEventSpec } from "@/lib/amplitude";
 import { captureSentryMessage } from "@/lib/sentry-capture";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function ResetPasswordPage() {
+  void getAmplitudeEventSpec;
   const router = useRouter();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -73,6 +75,7 @@ export default function ResetPasswordPage() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />
@@ -84,6 +87,7 @@ export default function ResetPasswordPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
+            data-amp-mask=""
             className="dark-input mt-1 h-10 w-full px-3 text-sm"
             autoComplete="new-password"
           />

@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import { AmplitudeProvider } from "@/components/amplitude-provider";
 import { PUBLIC_BETA_DESCRIPTION, PUBLIC_BETA_NAME } from "@/lib/public-config";
 import { getSiteOrigin } from "@/lib/site-url";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import localFont from "next/font/local";
+import { Suspense } from "react";
 import "./globals.css";
 
 const suseSans = localFont({
@@ -70,6 +72,9 @@ export default async function RootLayout({
     >
       <body className="min-h-full min-w-0 bg-app-shell text-slate-200">
         {children}
+        <Suspense fallback={null}>
+          <AmplitudeProvider />
+        </Suspense>
         <Analytics />
         <SpeedInsights />
       </body>

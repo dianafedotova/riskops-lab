@@ -30,6 +30,7 @@ import { AlertReviewModeHeader } from "@/features/alerts/detail/alert-review-mod
 import { AlertStaffReviewWorkspacePanel } from "@/features/alerts/detail/alert-staff-review-workspace-panel";
 import { AlertTraineeReviewWorkspacePanels } from "@/features/alerts/detail/alert-trainee-review-workspace-panels";
 import { getAlertContextIds } from "@/lib/alerts/identity";
+import { markFirstCaseOpened, trackTraineeEvent } from "@/lib/amplitude";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { useReviewWorkspaceActor } from "@/lib/hooks/use-review-workspace-actor";
 import { useReviewSubmissions } from "@/lib/hooks/use-review-submissions";
@@ -50,7 +51,7 @@ import { formatPostgrestError } from "@/shared/lib/postgrest";
 import type { AlertRow, ReviewSubmissionRow, ReviewThreadRow, UserRow } from "@/lib/types";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export default function AlertDetailsPage() {
   const { appUser, hasStaffAccess, isTraineeActor } = useReviewWorkspaceActor();
@@ -89,6 +90,7 @@ export default function AlertDetailsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
   const alertContext = getAlertContextIds(alert);
+  const trackedAlertOpenRef = useRef<string | null>(null);
 
   const decisionsThreadId = canonicalAsideThreadId;
   const { decisions, loading: decisionsLoading, refresh: refreshDecisions, resetDecision } = useTraineeDecisions(decisionsThreadId);
@@ -236,6 +238,24 @@ export default function AlertDetailsPage() {
     };
   }, [alertContext.internalId, alertContext.publicId, appUser, isTraineeActor, reviewThreadFromUrl, reloadTick, reviewThreadsReloadTick]);
 
+  useEffect(() => {
+    if (!isTraineeActor || !alert?.id) return;
+    const trackingKey = `${alert.id}:${appUser?.id ?? ""}`;
+    if (trackedAlertOpenRef.current === trackingKey) return;
+    trackedAlertOpenRef.current = trackingKey;
+    const properties = {
+      context_type: "alert" as const,
+      alert_id: alert.id,
+      simulator_user_id: alert.user_id,
+      alert_type: alert.alert_type ?? alert.type,
+      severity: alert.severity,
+      status: alert.status,
+    };
+    trackTraineeEvent(appUser?.role, "alert_opened", properties);
+    trackTraineeEvent(appUser?.role, "case_opened", properties);
+    markFirstCaseOpened(appUser?.role, properties);
+  }, [appUser?.id, appUser?.role, isTraineeActor, alert?.alert_type, alert?.id, alert?.severity, alert?.status, alert?.type, alert?.user_id]);
+
   const createReviewThread = useCallback(async () => {
     if (!appUser?.id || !alertContext.internalId) return null;
 
@@ -253,8 +273,15 @@ export default function AlertDetailsPage() {
     setReviewWorkspaceError(null);
     setCanonicalAsideThreadId(threadId);
     setReviewThreadsReloadTick((tick) => tick + 1);
+    trackTraineeEvent(appUser?.role, "review_thread_created", {
+      context_type: "alert",
+      thread_id: threadId,
+      alert_id: alertContext.publicId,
+      simulator_user_id: alert?.user_id,
+      has_existing_thread: reviewThreads.length > 0,
+    });
     return threadId;
-  }, [alertContext.internalId, alertContext.publicId, appUser?.id]);
+  }, [alert?.user_id, alertContext.internalId, alertContext.publicId, appUser?.id, appUser?.role, reviewThreads.length]);
 
   useEffect(() => {
     if (!alertContext.publicId || !appUser?.id || !isTraineeActor) {
@@ -416,6 +443,11 @@ export default function AlertDetailsPage() {
           publicId: publicAlertId,
         });
         setAssignees(list);
+        trackTraineeEvent(appUser.role, "alert_assigned_to_self", {
+          context_type: "alert",
+          alert_id: publicAlertId,
+          simulator_user_id: alert.user_id,
+        });
       });
     } catch (e) {
       setAssignError(formatPostgrestError(e));
@@ -520,6 +552,14 @@ export default function AlertDetailsPage() {
         if (workingThreadId === decisionsThreadId) {
           refreshDecisions();
         }
+        trackTraineeEvent(appUser.role, "decision_submitted", {
+          alert_id: alert.id,
+          thread_id: workingThreadId,
+          decision,
+          proposed_alert_status: proposedStatusForDecision(decision),
+          alert_type: alert.alert_type ?? alert.type,
+          severity: alert.severity,
+        });
       } catch (e) {
         setSubmitError(e instanceof Error ? e.message : "Submit failed");
       } finally {

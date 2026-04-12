@@ -26,6 +26,7 @@ import { SimulatorUserForm } from "@/components/simulator-user-form";
 import { SimulatorUserEventForm } from "@/components/simulator-user-event-form";
 import { UserAccountLinkForm } from "@/components/user-account-link-form";
 import { FilterSelect } from "@/components/filter-select";
+import { markFirstCaseOpened, trackTraineeEvent } from "@/lib/amplitude";
 import { useReviewSubmissions } from "@/lib/hooks/use-review-submissions";
 import { useReviewWorkspaceActor } from "@/lib/hooks/use-review-workspace-actor";
 import { fetchReviewThreadIdForProfile } from "@/lib/review/fetch-review-thread-id";
@@ -496,6 +497,7 @@ export default function UserProfilePage() {
     Record<string, TraineeDecisionRow>
   >({});
   const [linkedAlertDecisionFetchError, setLinkedAlertDecisionFetchError] = useState<string | null>(null);
+  const trackedProfileOpenRef = useRef<string | null>(null);
 
   const [notesTabThreadId, setNotesTabThreadId] = useState<string | null>(null);
   const [notesTabThreadError, setNotesTabThreadError] = useState<string | null>(null);
@@ -979,6 +981,24 @@ export default function UserProfilePage() {
   }, [appUser, isTraineeActor, user?.id]);
 
   useEffect(() => {
+    if (!isTraineeActor || !user?.id) return;
+    const trackingKey = `${user.id}:${appUser?.id ?? ""}`;
+    if (trackedProfileOpenRef.current === trackingKey) return;
+    trackedProfileOpenRef.current = trackingKey;
+    const properties = {
+      context_type: "profile" as const,
+      alert_id: null,
+      simulator_user_id: user.id,
+      alert_type: null,
+      severity: null,
+      status: user.status,
+    };
+    trackTraineeEvent(appUser?.role, "profile_opened", properties);
+    trackTraineeEvent(appUser?.role, "case_opened", properties);
+    markFirstCaseOpened(appUser?.role, properties);
+  }, [appUser?.id, appUser?.role, isTraineeActor, user?.id, user?.status]);
+
+  useEffect(() => {
     if (!appUser?.id || !isTraineeActor || !user?.id) {
       setStatusDraftError(null);
       return;
@@ -1082,17 +1102,27 @@ export default function UserProfilePage() {
         const { error: delErr } = await removeSimulatorUserFromWatchlist(supabase, appUser.id, user.id);
         if (delErr) throw delErr;
         setIsWatching(false);
+        trackTraineeEvent(appUser.role, "watchlist_item_removed", {
+          context_type: "profile",
+          alert_id: null,
+          simulator_user_id: user.id,
+        });
       } else {
         const { error: insErr } = await addSimulatorUserToWatchlist(supabase, appUser.id, user.id);
         if (insErr) throw insErr;
         setIsWatching(true);
+        trackTraineeEvent(appUser.role, "watchlist_item_added", {
+          context_type: "profile",
+          alert_id: null,
+          simulator_user_id: user.id,
+        });
       }
     } catch (e) {
       setWatchError(formatPostgrestError(e));
     } finally {
       setWatchBusy(false);
     }
-  }, [appUser?.id, isTraineeActor, isWatching, user?.id]);
+  }, [appUser?.id, appUser?.role, isTraineeActor, isWatching, user?.id]);
 
   const createReviewThread = useCallback(async () => {
     if (!appUser?.id || !user?.id) return null;
@@ -1108,8 +1138,15 @@ export default function UserProfilePage() {
     setNotesTabThreadError(null);
     setNotesTabThreadId(threadId);
     setReviewThreadsReloadTick((tick) => tick + 1);
+    trackTraineeEvent(appUser?.role, "review_thread_created", {
+      context_type: "profile",
+      thread_id: threadId,
+      alert_id: null,
+      simulator_user_id: user.id,
+      has_existing_thread: reviewThreads.length > 0,
+    });
     return threadId;
-  }, [appUser?.id, user?.id]);
+  }, [appUser?.id, appUser?.role, reviewThreads.length, user?.id]);
 
   const reviewThreadsSubmissionsForUi = useMemo(() => {
     if (!isTraineeActor) return reviewThreadsSubmissions;
@@ -1196,6 +1233,8 @@ export default function UserProfilePage() {
             reviewMode
             privateAlertInternalId={null}
             privateSimulatorUserId={null}
+            analyticsContextType="profile"
+            analyticsSimulatorUserId={user.id}
             submissions={staffPrimaryThreadId ? staffReviewSubmissions : []}
             createThread={isTraineeActor ? createReviewThread : null}
             adminModeOverride={hasStaffAccess ? "reply" : undefined}
@@ -1260,6 +1299,9 @@ export default function UserProfilePage() {
                 reviewMode
                 privateAlertInternalId={null}
                 privateSimulatorUserId={null}
+                analyticsContextType="profile"
+                analyticsSimulatorUserId={user.id}
+                analyticsHasExistingThread
                 submissions={[]}
                 showComposer={false}
                 onDeleteDraftThread={deleteDraftReviewThread}
@@ -1321,6 +1363,9 @@ export default function UserProfilePage() {
                     reviewMode
                     privateAlertInternalId={null}
                     privateSimulatorUserId={null}
+                    analyticsContextType="profile"
+                    analyticsSimulatorUserId={user.id}
+                    analyticsHasExistingThread
                     submissions={threadSubmissions}
                     showComposer={false}
                     adminModeOverride={hasStaffAccess ? "reply" : undefined}

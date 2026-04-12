@@ -22,6 +22,7 @@ import { createEmptyRichNoteValue, createRichNoteEditorValue, type RichNoteEdito
 import { useCurrentUser } from "@/components/current-user-provider";
 import { useSimulatorComments } from "@/lib/hooks/use-simulator-comments";
 import { canCreatePrivateNotes, canReplyAsQA, canViewPrivateNotes, canWriteTraineeDiscussion } from "@/lib/permissions/checks";
+import { getAmplitudeContextType, trackTraineeEvent } from "@/lib/amplitude";
 import { submitReviewSubmission } from "@/lib/services/review-submissions";
 import { createClient } from "@/lib/supabase";
 import type { ReviewSubmissionRow, SimulatorCommentRow } from "@/lib/types";
@@ -73,6 +74,10 @@ type Props = {
   showSubmittedSummary?: boolean;
   showQaReplyAction?: boolean;
   showReviewerFeedbackInThread?: boolean;
+  analyticsContextType?: "alert" | "profile";
+  analyticsAlertId?: string | null;
+  analyticsSimulatorUserId?: string | null;
+  analyticsHasExistingThread?: boolean;
 };
 
 const EMPTY_PREDEFINED_NOTES: NonNullable<Props["predefinedNotes"]> = [];
@@ -108,6 +113,10 @@ export function SimulatorCommentsPanel({
   showSubmittedSummary = true,
   showQaReplyAction = true,
   showReviewerFeedbackInThread: _showReviewerFeedbackInThread = false,
+  analyticsContextType,
+  analyticsAlertId = null,
+  analyticsSimulatorUserId = null,
+  analyticsHasExistingThread,
 }: Props) {
   void _showReviewerFeedbackInThread;
   const { appUser, loading: sessionLoading } = useCurrentUser();
@@ -283,6 +292,11 @@ export function SimulatorCommentsPanel({
     adminMode === "private" && !!appUser?.role && canCreatePrivateNotes(appUser.role);
   const composerActionLabel =
     traineeComposerMode === "draft" ? "Save as draft" : "Submit for review";
+  const analyticsContext = analyticsContextType ?? getAmplitudeContextType({
+    context_type: analyticsContextType,
+    alert_id: analyticsAlertId,
+    simulator_user_id: analyticsSimulatorUserId,
+  });
 
   useEffect(() => {
     if (!transientNotice) return;
@@ -374,6 +388,13 @@ export function SimulatorCommentsPanel({
         }
 
         const createdCommentId = await addUserComment(composerNote, appUser.id, workingThreadId);
+        trackTraineeEvent(appUser.role, "comment_created", {
+          context_type: analyticsContext,
+          thread_id: workingThreadId,
+          alert_id: analyticsAlertId,
+          simulator_user_id: analyticsSimulatorUserId,
+          has_existing_thread: analyticsHasExistingThread ?? Boolean(threadId),
+        });
         if (mode === "draft") {
           setActionOk("Draft note saved.");
           if (!showStatusMessages) {
@@ -392,6 +413,13 @@ export function SimulatorCommentsPanel({
           }
 
           emitReviewSubmissionsChanged(workingThreadId);
+          trackTraineeEvent(appUser.role, "review_submission_created", {
+            context_type: analyticsContext,
+            thread_id: workingThreadId,
+            submission_version: submission?.submission_version ?? 1,
+            has_decision: false,
+            has_root_comment: Boolean(createdCommentId),
+          });
           setActionOk(
             submission
               ? `Review note submitted as snapshot v${submission.submission_version}.`
@@ -415,6 +443,10 @@ export function SimulatorCommentsPanel({
     addAdminQaReply,
     addUserComment,
     adminMode,
+    analyticsAlertId,
+    analyticsContext,
+    analyticsHasExistingThread,
+    analyticsSimulatorUserId,
     appUser,
     composerNote,
     createThread,
@@ -464,6 +496,13 @@ export function SimulatorCommentsPanel({
         }
 
         emitReviewSubmissionsChanged(threadId);
+        trackTraineeEvent(appUser.role, "review_submission_resubmitted", {
+          context_type: analyticsContext,
+          thread_id: threadId,
+          submission_version: submission?.submission_version ?? null,
+          has_decision: false,
+          has_root_comment: true,
+        });
         setEditingRootId(null);
         setEditRootNote(createEmptyRichNoteValue());
         setActionOk(
@@ -477,7 +516,7 @@ export function SimulatorCommentsPanel({
         setResubmittingRootId(null);
       }
     },
-    [appUser, threadId, updateUserRootComment]
+    [analyticsContext, appUser, threadId, updateUserRootComment]
   );
 
   const onTraineeReplyThenNewSnapshot = useCallback(
@@ -499,6 +538,13 @@ export function SimulatorCommentsPanel({
         }
         emitReviewSubmissionsChanged(threadId);
         void refreshDiscussion();
+        trackTraineeEvent(appUser.role, "review_submission_resubmitted", {
+          context_type: analyticsContext,
+          thread_id: threadId,
+          submission_version: submission?.submission_version ?? null,
+          has_decision: false,
+          has_root_comment: true,
+        });
         setReplyNote(createEmptyRichNoteValue());
         setReplyTo(null);
         setActionOk(
@@ -512,7 +558,7 @@ export function SimulatorCommentsPanel({
         setReplyResubmittingRootId(null);
       }
     },
-    [addUserReply, appUser, replyNote, threadId, refreshDiscussion]
+    [addUserReply, analyticsContext, appUser, replyNote, threadId, refreshDiscussion]
   );
 
   const onDeleteDraft = useCallback(async () => {
@@ -522,13 +568,20 @@ export function SimulatorCommentsPanel({
     setDeletingDraftThreadId(threadId);
     try {
       await onDeleteDraftThread(threadId);
+      trackTraineeEvent(appUser?.role, "draft_deleted", {
+        context_type: analyticsContext,
+        thread_id: threadId,
+        alert_id: analyticsAlertId,
+        simulator_user_id: analyticsSimulatorUserId,
+        has_existing_thread: true,
+      });
       setActionOk("Draft deleted.");
     } catch (e) {
       setActionError(getErrorMessage(e, "Failed to delete draft"));
     } finally {
       setDeletingDraftThreadId(null);
     }
-  }, [onDeleteDraftThread, threadId]);
+  }, [analyticsAlertId, analyticsContext, analyticsSimulatorUserId, appUser?.role, onDeleteDraftThread, threadId]);
 
   const shouldRenderPanel =
     Boolean(threadId) ||
