@@ -1,5 +1,13 @@
-﻿import { Suspense } from "react";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import { buildNoIndexPageMetadata } from "@/lib/public-seo";
 import { LoginForm } from "../login/login-form";
+
+export const metadata: Metadata = buildNoIndexPageMetadata({
+  title: "Sign In",
+  description: "Sign in to continue your RiskOps Lab training workspace.",
+  path: "/sign-in",
+});
 
 export default function SignInPage() {
   return (
@@ -8,4 +16,3 @@ export default function SignInPage() {
     </Suspense>
   );
 }
-

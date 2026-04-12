@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
           isProduction: process.env.NODE_ENV === "production",
           supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
           sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN,
+          silktideCssUrl: process.env.NEXT_PUBLIC_SILKTIDE_CSS_URL,
+          silktideJsUrl: process.env.NEXT_PUBLIC_SILKTIDE_JS_URL,
         }),
       },
     ];

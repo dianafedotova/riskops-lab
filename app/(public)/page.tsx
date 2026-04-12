@@ -1,4 +1,25 @@
-import Link from "next/link";
+import { PublicTrackedLink } from "@/components/public-tracked-link";
+import {
+  buildLandingPageJsonLd,
+  buildOrganizationJsonLd,
+  buildPublicPageMetadata,
+  buildWebsiteJsonLd,
+  serializeJsonLd,
+} from "@/lib/public-seo";
+
+export const metadata = buildPublicPageMetadata({
+  title: "Fraud & AML Investigation Simulator",
+  description:
+    "Practice AML and fraud investigations with synthetic cases, guided workflows, and beginner-friendly analyst training.",
+  path: "/",
+  keywords: [
+    "aml training",
+    "fraud investigation training",
+    "aml analyst practice",
+    "fraud analyst simulator",
+    "risk operations training",
+  ],
+});
 
 type IconName = "alert" | "book" | "note" | "path" | "shield" | "spark";
 
@@ -122,10 +143,19 @@ function IconBadge({ icon }: { icon: IconName }) {
 export default function LandingPage() {
   const primaryButtonClass = "ui-btn ui-btn-primary";
   const secondaryButtonClass = "ui-btn ui-btn-secondary";
+  const landingJsonLd = [
+    buildOrganizationJsonLd(),
+    buildWebsiteJsonLd(),
+    buildLandingPageJsonLd(),
+  ];
 
   return (
     <div className="main-content-shell p-3 sm:p-5 md:p-6">
       <div className="space-y-8 md:space-y-10">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(landingJsonLd) }}
+        />
         <section className="shell-card relative overflow-hidden p-6 sm:p-8 lg:p-10">
           <div
             aria-hidden="true"
@@ -148,13 +178,50 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link href="/signup" className={primaryButtonClass}>
+              <PublicTrackedLink
+                href="/signup"
+                className={primaryButtonClass}
+                eventName="cta_clicked"
+                eventProps={{
+                  cta_name: "start_your_first_case",
+                  cta_location: "landing_hero",
+                  page_type: "landing",
+                  route_group: "public",
+                }}
+              >
                 Start your first case
-              </Link>
-              <Link href="/guide" className={secondaryButtonClass}>
+              </PublicTrackedLink>
+              <PublicTrackedLink
+                href="/guide"
+                className={secondaryButtonClass}
+                eventName="cta_clicked"
+                eventProps={{
+                  cta_name: "open_guide",
+                  cta_location: "landing_hero",
+                  page_type: "landing",
+                  route_group: "public",
+                }}
+              >
                 Open Guide
-              </Link>
+              </PublicTrackedLink>
             </div>
+            <p className="text-sm leading-7 text-[var(--accent-stone-500)]">
+              Prefer to read first?{" "}
+              <PublicTrackedLink
+                href="/knowledge-base"
+                eventName="cta_clicked"
+                eventProps={{
+                  cta_name: "open_knowledge_base",
+                  cta_location: "landing_hero_supporting_link",
+                  page_type: "landing",
+                  route_group: "public",
+                }}
+                className="font-medium text-[var(--brand-700)] underline"
+              >
+                Explore the Knowledge Base
+              </PublicTrackedLink>
+              .
+            </p>
           </div>
         </section>
 
@@ -265,12 +332,19 @@ export default function LandingPage() {
               </p>
             </div>
             <div>
-              <Link
+              <PublicTrackedLink
                 href="/signup"
+                eventName="cta_clicked"
+                eventProps={{
+                  cta_name: "start_your_first_case",
+                  cta_location: "landing_footer",
+                  page_type: "landing",
+                  route_group: "public",
+                }}
                 className="inline-flex min-h-11 items-center justify-center rounded-[1.2rem] bg-[var(--surface-workspace)] px-5 py-2 text-sm font-semibold text-[var(--app-shell-bg)] shadow-[0_8px_18px_rgba(15,23,42,0.22)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-[var(--surface-main)] active:translate-y-0 sm:min-h-0 sm:py-2"
               >
                 Start your first case
-              </Link>
+              </PublicTrackedLink>
             </div>
           </div>
         </section>

@@ -1,8 +1,36 @@
 import { PublicBetaNote } from "@/components/public-beta-note";
+import {
+  buildPublicPageMetadata,
+  buildPublicWebPageJsonLd,
+  serializeJsonLd,
+} from "@/lib/public-seo";
+
+export const metadata = buildPublicPageMetadata({
+  title: "Simulator Guide",
+  description:
+    "Understand how the RiskOps Lab simulator works, from alert review to analyst decisions in synthetic fraud and AML workflows.",
+  path: "/guide",
+});
 
 export default function GuidePage() {
+  const guideJsonLd = buildPublicWebPageJsonLd({
+    name: "RiskOps Lab Guide",
+    path: "/guide",
+    description:
+      "Guide to the RiskOps Lab simulator covering review workflow, alerts, and analyst actions in a synthetic training environment.",
+    about: [
+      "Alert review workflow",
+      "Fraud analyst practice",
+      "AML analyst practice",
+    ],
+  });
+
   return (
     <section className="space-y-5 rounded-[1.2rem] bg-[var(--surface-panel)] p-4 shadow-[0_10px_22px_rgba(15,23,42,0.12)] sm:p-6">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(guideJsonLd) }}
+      />
       <div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--accent-stone-500)]">

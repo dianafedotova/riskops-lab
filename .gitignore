@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Mistaken empty directory (IndexNow key lives in env, not as a path under app/)
+/app/indexnow-key.txt/

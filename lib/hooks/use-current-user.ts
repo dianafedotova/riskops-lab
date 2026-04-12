@@ -19,28 +19,40 @@ const HYDRATION_MAX_TRIES = 45;
 export function useCurrentUserState(initialSession?: CurrentUserInitialSession) {
   const hadServerSession = useRef(initialSession !== undefined);
   const serverHadAuthUser = useRef(Boolean(initialSession?.authUser));
+  const isMountedRef = useRef(false);
   const [authUser, setAuthUser] = useState<User | null>(() => initialSession?.authUser ?? null);
   const [appUser, setAppUser] = useState<AppUserRow | null>(() => initialSession?.appUser ?? null);
   const [loading, setLoading] = useState(() => initialSession === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async (showLoading: boolean): Promise<User | null> => {
+    if (!isMountedRef.current) return null;
     setError(null);
     if (showLoading) setLoading(true);
     let resolvedUser: User | null = null;
     try {
       await runSerializedAuth(async () => {
+        if (!isMountedRef.current) return;
         const supabase = createClient();
         const ctx = await getCurrentAppUser(supabase);
+        if (!isMountedRef.current) return;
         resolvedUser = ctx.authUser;
         setAuthUser(ctx.authUser);
         setAppUser(ctx.appUser);
         if (ctx.error) setError(ctx.error.message);
       });
     } finally {
-      if (showLoading) setLoading(false);
+      if (showLoading && isMountedRef.current) setLoading(false);
     }
     return resolvedUser;
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {

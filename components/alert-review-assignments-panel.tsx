@@ -2,6 +2,7 @@
 
 import { FilterSelect } from "@/components/filter-select";
 import { QueryErrorBanner } from "@/components/query-error";
+import { postJson } from "@/lib/client/post-json";
 import { useReviewWorkspaceActor } from "@/lib/hooks/use-review-workspace-actor";
 import { formatDate, formatDateTime } from "@/lib/format";
 import {
@@ -11,7 +12,6 @@ import {
   traineeCaseFilterSegment,
   updateAlertReviewAssignmentDueAt,
   updateAlertReviewAssignmentPriority,
-  upsertAlertReviewAssignments,
   type AlertReviewAssignmentListRow,
   type AlertReviewAssignmentPriority,
   type AlertTraineeCaseRow,
@@ -110,6 +110,10 @@ export function AlertReviewAssignmentsPanel({
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionOk, setActionOk] = useState<string | null>(null);
+
+  type AlertReviewAssignmentsRouteResponse = {
+    error: string | null;
+  };
 
   useEffect(() => {
     if (!canManageAssignments || !appUser?.id) {
@@ -210,14 +214,13 @@ export function AlertReviewAssignmentsPanel({
     setActionError(null);
     setActionOk(null);
     try {
-      const supabase = createClient();
-      const { error: assignError } = await upsertAlertReviewAssignments(supabase, appUser, {
+      const result = await postJson<AlertReviewAssignmentsRouteResponse>("/api/alert-review-assignments", {
         alertId,
         traineeAppUserIds: selectedTraineeIds,
         priority: priorityDraft,
         dueAt: dateInputToIso(dueDateDraft),
       });
-      if (assignError) throw new Error(assignError);
+      if (result.error) throw new Error(result.error);
       setActionOk(selectedTraineeIds.length === 1 ? "Trainee assigned." : "Trainees assigned.");
       setSelectedTraineeIds([]);
       setDueDateDraft("");

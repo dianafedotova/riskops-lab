@@ -6,9 +6,6 @@ const PUBLIC_PATHS = [
   "/guide",
   "/privacy",
   "/terms",
-  "/sign-in",
-  "/signup",
-  "/forgot-password",
 ] as const;
 
 export function buildPublicSitemap(origin: string): MetadataRoute.Sitemap {
@@ -19,7 +16,7 @@ export function buildPublicSitemap(origin: string): MetadataRoute.Sitemap {
     url: `${base}${path}`,
     lastModified: now,
     changeFrequency: path === "/" ? "weekly" : "monthly",
-    priority: path === "/" ? 1 : path === "/signup" || path === "/sign-in" ? 0.8 : 0.6,
+    priority: path === "/" ? 1 : 0.6,
   }));
 }
 
@@ -30,7 +27,19 @@ export function buildPublicRobots(origin: string): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/about", "/guide", "/privacy", "/terms", "/sign-in", "/signup", "/forgot-password"],
+        allow: [
+          "/",
+          "/about",
+          "/guide",
+          "/knowledge-base",
+          "/privacy",
+          "/terms",
+          "/sign-in",
+          "/signup",
+          "/forgot-password",
+          "/reset-password",
+          "/indexnow-key.txt",
+        ],
         disallow: ["/admin", "/alerts", "/api", "/dashboard", "/my-cases", "/profile", "/users", "/workspace"],
       },
     ],
