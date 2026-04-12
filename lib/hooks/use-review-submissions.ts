@@ -1,5 +1,6 @@
 "use client";
 
+import { postJson } from "@/lib/client/post-json";
 import { createClient } from "@/lib/supabase";
 import type {
   ReviewSubmissionEvaluation,
@@ -10,12 +11,16 @@ import type {
 import {
   getLatestReviewSubmission,
   listReviewSubmissions,
-  reviewReviewSubmission,
   submitReviewSubmission,
 } from "@/lib/services/review-submissions";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const REVIEW_SUBMISSIONS_CHANGED_EVENT = "review-submissions:changed";
+
+type ReviewSubmissionReviewResponse = {
+  error: string | null;
+  submission: ReviewSubmissionRow | null;
+};
 
 export function emitReviewSubmissionsChanged(threadId: string | null) {
   if (typeof window === "undefined" || !threadId) return;
@@ -152,13 +157,11 @@ export function useReviewSubmissions(threadId: string | null) {
       evaluation?: ReviewSubmissionEvaluation | null;
       feedback?: string | null;
     }) => {
-      const supabase = createClient();
-      const result = await reviewReviewSubmission(supabase, {
+      const result = await postJson<ReviewSubmissionReviewResponse>("/api/review-submissions/review", {
         submissionId: args.submissionId,
         reviewState: args.reviewState,
         evaluation: args.evaluation,
         feedback: args.feedback,
-        activityAppUserId: args.appUserId,
       });
       if (result.error) throw new Error(result.error);
       refresh();
