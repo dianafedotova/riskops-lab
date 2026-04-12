@@ -4,7 +4,7 @@ test("public landing page renders", async ({ page }) => {
   await page.goto("/");
   await expect(
     page.getByRole("heading", {
-      name: /build practical analyst judgment/i,
+      name: /build aml and fraud investigation skills before your first role/i,
     })
   ).toBeVisible();
 });
